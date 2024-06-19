@@ -24,6 +24,18 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
+      - name: Check version tag
+        id: version_check
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PYPROJECT_VERSION=$(poetry version -s)
+          echo "Tag version: $TAG_VERSION"
+          echo "Poetry version: $PYPROJECT_VERSION"
+          if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match pyproject.toml version ($PYPROJECT_VERSION)"
+            exit 1
+          fi
+
       - name: Build package
         run: poetry build
 
@@ -32,5 +44,7 @@ jobs:
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           poetry config pypi-token.pypi $POETRY_PYPI_TOKEN_PYPI
-          poetry publish --build --username __token__ --password $POETRY_PYPI_TOKEN_PYPI
+          poetry publish --dry-run
+          echo "Publishing."
+          poetry publish
 
