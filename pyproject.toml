@@ -1,0 +1,24 @@
+
+[tool.poetry]
+name = "paradex-cli"
+version = "0.1.0"
+description = "CLI for interacting with Paradex API and Paraclear smart contracts"
+authors = ["Paradex Team <support@paradex.trade>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+typer = {extras = ["all"], version = "^0.3.2"}
+paradex_py = "^0.4.1"
+rich = "^13.7.1"
+
+[tool.poetry.scripts]
+paradex-cli = "paradex_cli.main:app"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+pytest-asyncio = "^0.23.7"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
