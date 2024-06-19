@@ -1,7 +1,7 @@
 import os
 import sys
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch, ANY
 
 import pytest
 from paradex_cli import (
@@ -54,7 +54,7 @@ async def test_load_contract_from_account(mock_account):
     ) as mock_from_address:
         contract = await load_contract_from_account(mock_address, mock_account)
         mock_from_address.assert_called_once_with(
-            address=mock_address, provider=mock_account.starknet, proxy_config=True
+            address=mock_address, provider=mock_account.starknet, proxy_config=ANY
         )
         assert contract == mock_contract
 

@@ -2,9 +2,10 @@ import asyncio
 import dataclasses
 import json
 import os
+import re
 import sys
 from decimal import Decimal
-from typing import Union
+from typing import Callable, Optional, Union
 
 import marshmallow_dataclass
 import typer
@@ -17,6 +18,14 @@ from starknet_py.contract import Contract
 from starknet_py.net.models import AddressRepresentation, InvokeV1
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 from starknet_py.proxy.contract_abi_resolver import ProxyConfig
+from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
+from starknet_py.net.models import Address, AddressRepresentation, InvokeV1
+from starknet_py.net.client import Client
+from starknet_py.constants import RPC_CONTRACT_ERROR
+from starknet_py.net.client_errors import ClientError
+from starknet_py.net.client_models import Call
+from starknet_py.hash.selector import get_selector_from_name
+
 
 app = typer.Typer(
     help="""Manage account contract setup.
@@ -61,10 +70,57 @@ def int_16(val):
     return int(val, 16)
 
 
+class StarkwareETHProxyCheck(ProxyCheck):
+    async def implementation_address(self, address: Address, client: Client) -> Optional[int]:
+        return await self.get_implementation(
+            address=address,
+            client=client,
+            get_class_func=client.get_class_hash_at,
+            regex_err_msg=r"(is not deployed)",
+        )
+
+    async def implementation_hash(self, address: Address, client: Client) -> Optional[int]:
+        return await self.get_implementation(
+            address=address,
+            client=client,
+            get_class_func=client.get_class_by_hash,
+            regex_err_msg=r"(is not declared)",
+        )
+
+    @staticmethod
+    async def get_implementation(
+        address: Address, client: Client, get_class_func: Callable, regex_err_msg: str
+    ) -> Optional[int]:
+        call = StarkwareETHProxyCheck._get_implementation_call(address=address)
+        err_msg = r"(Entry point 0x[0-9a-f]+ not found in contract)|" + regex_err_msg
+        try:
+            (implementation,) = await client.call_contract(call=call)
+            await get_class_func(implementation)
+        except ClientError as err:
+            if re.search(err_msg, err.message, re.IGNORECASE) or err.code == RPC_CONTRACT_ERROR:
+                return None
+            raise err
+        return implementation
+
+    @staticmethod
+    def _get_implementation_call(address: Address) -> Call:
+        return Call(
+            to_addr=address,
+            selector=get_selector_from_name("implementation"),
+            calldata=[],
+        )
+   
+
+def get_proxy_config():
+    return ProxyConfig(
+        max_steps=5,
+        proxy_checks=[StarkwareETHProxyCheck(), ArgentProxyCheck(), OpenZeppelinProxyCheck()],
+    )
+
 async def load_contract_from_account(
     address: AddressRepresentation,
     account: ParadexAccount,
-    proxy_config: Union[bool, ProxyConfig] = True,
+    proxy_config: Union[bool, ProxyConfig] = get_proxy_config(),
 ) -> Contract:
     contract = await Contract.from_address(
         address=address, provider=account.starknet, proxy_config=proxy_config
@@ -132,7 +188,6 @@ async def _change_guardian_backup(saccount: StarknetAccount, contract: Contract,
 
 
 async def _check_multisig_required(contract: Contract):
-    print("Contract functions - ", contract.functions)
     get_signer_call = await contract.functions["getSigner"].call()
     print("Current signer:", hex(get_signer_call.signer))
 
@@ -232,6 +287,7 @@ async def _submit_invoke_tx(paccount: ParadexAccount, tx_file, sig_files):
     for pubkey in pubkeys:
         if pubkey in signatures:
             sorted_sig.append(signatures[pubkey])
+    sorted_sig = sum(sorted_sig, [])
     print("Contract address:", hex(contract.address))
     invoke_result = await paccount.starknet.invoke(contract, invoke, sorted_sig)
     print("Waiting tx hash:", hex(invoke_result.hash))
@@ -402,18 +458,18 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount.starknet
+        address=paccount.l2_address, account=paccount
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount.starknet
+        address=paraclear_address, account=paccount
     )
-    print(f"Paraclear Contract: {paraclear_contract}")
+    print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
     usdc_decimals = paccount.config.bridged_tokens[0].decimals
     l2_bridge_address = paccount.config.bridged_tokens[0].l2_bridge_address
 
     l2_bridge_contract = await load_contract_from_account(
-        address=l2_bridge_address, account=paccount.starknet
+        address=l2_bridge_address, account=paccount
     )
     l2_bridge_version = await l2_bridge_contract.functions["get_version"].call()
     l2_bridge_version = (
@@ -432,7 +488,7 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
 
     l1_recipient_arg = int_16(l1_recipient)
     l1_recipient_arg = (
-        {"address": int_16(l1_recipient_arg)} if l2_bridge_version == 2 else l1_recipient_arg
+        {"address": l1_recipient_arg} if l2_bridge_version == 2 else l1_recipient_arg
     )
     calls = [
         paraclear_contract.functions["withdraw"].prepare_invoke_v1(
@@ -483,16 +539,16 @@ async def _transfer_on_l2(
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount.starknet
+        address=paccount.l2_address, account=paccount
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount.starknet
+        address=paraclear_address, account=paccount
     )
-    print(f"Paraclear Contract: {paraclear_contract}")
+    print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
 
     usdc_contract = await load_contract_from_account(
-        address=usdc_address, account=paccount.starknet
+        address=usdc_address, account=paccount
     )
     usdc_decimals = paccount.config.bridged_tokens[0].decimals
 
@@ -554,16 +610,16 @@ async def _deposit_to_paraclear(paccount: ParadexAccount, amount_decimal: Decima
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount.starknet
+        address=paccount.l2_address, account=paccount
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount.starknet
+        address=paraclear_address, account=paccount
     )
-    print(f"Paraclear Contract: {paraclear_contract}")
+    print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
 
     usdc_contract = await load_contract_from_account(
-        address=usdc_address, account=paccount.starknet
+        address=usdc_address, account=paccount
     )
     usdc_decimals = paccount.config.bridged_tokens[0].decimals
     print(f"usdc_address: {usdc_address}")
