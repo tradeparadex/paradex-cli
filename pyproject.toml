@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "paradex-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI for interacting with Paradex API and Paraclear smart contracts"
 authors = ["Paradex Team <support@paradex.trade>"]
 license = "MIT"
