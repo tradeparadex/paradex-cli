@@ -20,20 +20,6 @@ Or using Poetry:
 poetry add paradex_cli
 ```
 
-## Usage
-
-To use the CLI, simply run:
-
-```sh
-paradex_cli hello NAME
-```
-
-Example:
-
-```sh
-paradex_cli hello World
-```
-
 ## Commands
 
 ### Print Account Info
@@ -70,6 +56,12 @@ paradex_cli sign-invoke-tx FILE_PATH --env ENVIRONMENT
 
 ```sh
 paradex_cli submit-invoke-tx TX_FILE_PATH SIG_FILES --env ENVIRONMENT
+```
+
+### Trigger Escape Guardian
+
+```
+paradex_cli trigger-escape-guardian --env ENVIRONMENT
 ```
 
 ## Development

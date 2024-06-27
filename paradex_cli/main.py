@@ -673,5 +673,36 @@ def deposit_to_paraclear(
     asyncio.run(_deposit_to_paraclear(paccount, Decimal(amount_decimal)))
 
 
+
+async def _trigger_escape_guardian(paccount: ParadexAccount):
+    contract = await load_contract_from_account(paccount.l2_address, paccount)
+    print(f"Contract: {paccount.l2_address}")
+
+    print("Trigger escape guardian...")
+    funcName = 'triggerEscapeGuardian'
+    call = contract.functions[funcName].prepare_invoke_v1(max_fee=random_max_fee())
+    prepared_invoke = await paccount.starknet.prepare_invoke(calls=call, max_fee=random_max_fee())
+    await _process_invoke(paccount.starknet, contract, False, prepared_invoke, funcName)
+    
+
+
+@app.command()
+def trigger_escape_guardian(
+    env: str = option_env,
+):
+    """
+    Triggers the escape guardian for the given account.
+
+    Args:
+        env (str): The environment to trigger the escape guardian in.
+
+    Returns:
+        None
+    """
+    pclient = Paradex(env=env)
+    paccount = ParadexAccount(config=pclient.config, l1_address="0x0", l2_private_key=ACCOUNT_KEY)
+    asyncio.run(_trigger_escape_guardian(paccount))
+
+
 if __name__ == "__main__":
     app()
