@@ -15,7 +15,6 @@ from paradex_py.paradex import Paradex, ParadexAccount
 from paradex_py.utils import random_max_fee
 from starknet_py.cairo.felt import decode_shortstring
 from starknet_py.contract import Contract
-from starknet_py.net.models import AddressRepresentation, InvokeV1
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 from starknet_py.proxy.contract_abi_resolver import ProxyConfig
 from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
@@ -109,7 +108,7 @@ class StarkwareETHProxyCheck(ProxyCheck):
             selector=get_selector_from_name("implementation"),
             calldata=[],
         )
-   
+
 
 def get_proxy_config():
     return ProxyConfig(
@@ -458,10 +457,10 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount
+        address=paccount.l2_address, account=paccount, proxy_config=True
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount
+        address=paraclear_address, account=paccount, proxy_config=True
     )
     print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
@@ -477,10 +476,11 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     )
     print(f"USDC Bridge Contract: {l2_bridge_contract}")
 
-    token_asset_bal = await paraclear_contract.functions["getTokenAssetBalance"].call(
+    token_asset_bal = await paraclear_contract.functions["get_token_asset_balance"].call(
         account=paccount.l2_address, token_address=int_16(usdc_address)
     )
-    print(f"USDC balance on paraclear: {token_asset_bal.balance / 10**paraclear_decimals}")
+    balance = token_asset_bal[0]
+    print(f"USDC balance on paraclear: {balance / 10**paraclear_decimals}")
     amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
     print(f"Amount to withdraw from paraclear: {amount_paraclear}")
     amount_bridge = int(amount_decimal * 10**usdc_decimals)
@@ -539,10 +539,10 @@ async def _transfer_on_l2(
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount
+        address=paccount.l2_address, account=paccount, proxy_config=True
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount
+        address=paraclear_address, account=paccount, proxy_config=True
     )
     print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
@@ -552,10 +552,12 @@ async def _transfer_on_l2(
     )
     usdc_decimals = paccount.config.bridged_tokens[0].decimals
 
-    token_asset_bal = await paraclear_contract.functions["getTokenAssetBalance"].call(
+    token_asset_bal = await paraclear_contract.functions["get_token_asset_balance"].call(
         account=paccount.starknet.address, token_address=int_16(usdc_address)
     )
-    print(f"USDC balance on paraclear: {token_asset_bal.balance / 10**paraclear_decimals}")
+    balance = token_asset_bal[0]
+
+    print(f"USDC balance on paraclear: {balance / 10**paraclear_decimals}")
     amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
     print(f"Amount to withdraw from paraclear: {amount_paraclear}")
     amount_bridge = int(amount_decimal * 10**usdc_decimals)
@@ -610,10 +612,10 @@ async def _deposit_to_paraclear(paccount: ParadexAccount, amount_decimal: Decima
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount
+        address=paccount.l2_address, account=paccount, proxy_config=True
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount
+        address=paraclear_address, account=paccount, proxy_config=True
     )
     print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
@@ -623,10 +625,11 @@ async def _deposit_to_paraclear(paccount: ParadexAccount, amount_decimal: Decima
     )
     usdc_decimals = paccount.config.bridged_tokens[0].decimals
     print(f"usdc_address: {usdc_address}")
-    token_asset_bal = await paraclear_contract.functions["getTokenAssetBalance"].call(
+    token_asset_bal = await paraclear_contract.functions["get_token_asset_balance"].call(
         account=paccount.l2_address, token_address=int_16(usdc_address)
     )
-    print(f"USDC balance on paraclear: {token_asset_bal.balance / 10**paraclear_decimals}")
+    balance = token_asset_bal[0]
+    print(f"USDC balance on paraclear: {balance / 10**paraclear_decimals}")
     amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
     print(f"Amount to deposit to paraclear: {amount_paraclear}")
     amount_usdc = int(amount_decimal * 10**usdc_decimals)
@@ -683,7 +686,7 @@ async def _trigger_escape_guardian(paccount: ParadexAccount):
     call = contract.functions[funcName].prepare_invoke_v1(max_fee=random_max_fee())
     prepared_invoke = await paccount.starknet.prepare_invoke(calls=call, max_fee=random_max_fee())
     await _process_invoke(paccount.starknet, contract, False, prepared_invoke, funcName)
-    
+
 
 
 @app.command()
