@@ -37,6 +37,8 @@ app = typer.Typer(
     - Withdraw to L1
     - Transfer on L2
     - Deposit to Paraclear
+    - Triggers the escape guardian
+    - Escape guardian
     """,
     # rich_markup_mode="rich",
 )
@@ -706,6 +708,37 @@ def trigger_escape_guardian(
     paccount = ParadexAccount(config=pclient.config, l1_address="0x0", l2_private_key=ACCOUNT_KEY)
     asyncio.run(_trigger_escape_guardian(paccount))
 
+async def _escape_guardian(saccount: StarknetAccount, contract: Contract, guardian_pub_key: str):
 
+    need_multisig = await _check_multisig_required(contract)
+
+    print("Change guardian wallet...")
+    funcName = 'escapeGuardian'
+    call = contract.functions[funcName].prepare_invoke_v1(
+        newGuardian=int_16(guardian_pub_key),
+        max_fee=random_max_fee(),
+    )
+    prepared_invoke = await saccount.prepare_invoke(calls=call, max_fee=random_max_fee())
+    await _process_invoke(saccount, contract, need_multisig, prepared_invoke, funcName)
+@app.command()
+def escape_guardian(
+    pub_key: str = typer.Argument(..., help="Public key of the new guardian"),
+    env: str = option_env,
+):
+    """
+    Escape guardian for the given account.
+
+    Args:
+        pub_key (str): Public key of the new guardian to set.
+        env (str): The environment to trigger the escape guardian in.
+
+    Returns:
+        None
+    """
+    pclient = Paradex(env=env)
+    paccount = ParadexAccount(config=pclient.config, l1_address="0x0", l2_private_key=ACCOUNT_KEY)
+    contract = asyncio.run(load_contract_from_account(paccount.l2_address, paccount))
+    print("Contract address:", hex(paccount.l2_address))
+    asyncio.run(_escape_guardian(paccount.starknet, contract, pub_key))
 if __name__ == "__main__":
     app()
