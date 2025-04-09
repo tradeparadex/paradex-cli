@@ -13,6 +13,7 @@ from paradex_cli import (
     _submit_invoke_tx,
     _transfer_on_l2,
     _withdraw_to_l1,
+    _escape_guardian,
     app,
     load_contract_from_account,
 )
@@ -215,6 +216,24 @@ async def test_deposit_to_paraclear(mock_account, setup_env_vars):
         mock_contract.functions["deposit"].prepare_invoke_v1.assert_called_once()
         mock_contract.functions["increase_allowance"].prepare_invoke_v1.assert_called_once()
 
+@pytest.mark.asyncio
+async def test_escape_guardian_logic():
+    mock_contract = AsyncMock()
+    mock_contract.functions = {
+        "escapeGuardian": MagicMock(prepare_invoke_v1=MagicMock(return_value="prepared_call"))
+    }
+
+    mock_account = MagicMock()
+    mock_account.prepare_invoke = AsyncMock(return_value="prepared_invoke")
+
+    with patch("paradex_cli.main._check_multisig_required", return_value=False), \
+         patch("paradex_cli.main._process_invoke", new_callable=AsyncMock) as mock_process:
+        
+        await _escape_guardian(mock_account, mock_contract, "0xABC")
+        
+        mock_contract.functions["escapeGuardian"].prepare_invoke_v1.assert_called_once()
+        mock_account.prepare_invoke.assert_called_once_with(calls="prepared_call", max_fee=ANY)
+        mock_process.assert_called_once()
 
 def test_check_env_vars_missing():
     with (
@@ -300,6 +319,18 @@ def test_submit_invoke_tx_command(setup_env_vars):
             app,
             ["submit-invoke-tx", "dummy_tx_file", "sig_file1", "sig_file2", "--env", "testnet"],
         )
+        assert result.exit_code == 0
+        mock_account.assert_called_once()
+        mock_async_run.assert_called()
+
+def test_escape_guardian_command(setup_env_vars):
+    with (
+        patch("paradex_cli.main.ParadexAccount") as mock_account,
+        patch("paradex_cli.main.asyncio.run", new_callable=AsyncMock) as mock_async_run,
+        patch("paradex_cli.main.load_contract_from_account", new_callable=AsyncMock),
+        patch("builtins.open", new_callable=mock_open),
+    ):
+        result = runner.invoke(app, ["escape-guardian", "0x123", "--env", "testnet"])
         assert result.exit_code == 0
         mock_account.assert_called_once()
         mock_async_run.assert_called()
