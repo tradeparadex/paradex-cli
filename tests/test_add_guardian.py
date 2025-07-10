@@ -1,5 +1,4 @@
 import os
-import sys
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch, ANY
 
@@ -228,9 +227,9 @@ async def test_escape_guardian_logic():
 
     with patch("paradex_cli.main._check_multisig_required", return_value=False), \
          patch("paradex_cli.main._process_invoke", new_callable=AsyncMock) as mock_process:
-        
+
         await _escape_guardian(mock_account, mock_contract, "0xABC")
-        
+
         mock_contract.functions["escapeGuardian"].prepare_invoke_v1.assert_called_once()
         mock_account.prepare_invoke.assert_called_once_with(calls="prepared_call", max_fee=ANY)
         mock_process.assert_called_once()
