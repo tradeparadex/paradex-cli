@@ -10,6 +10,7 @@ python = ">=3.9,<3.13"
 typer = {extras = ["all"], version = "^0.15.2"}
 paradex_py = "^0.4.4"
 rich = "^14.0.0"
+eth-typing = "^5.2.1"
 
 [tool.poetry.scripts]
 paradex-cli = "paradex_cli.main:app"
