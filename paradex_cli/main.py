@@ -26,6 +26,8 @@ from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call
 from starknet_py.hash.selector import get_selector_from_name
 
+from paradex_cli.multisig import multisig_app
+
 
 app = typer.Typer(
     help="""Manage account contract setup.
@@ -43,6 +45,8 @@ app = typer.Typer(
     """,
     # rich_markup_mode="rich",
 )
+# Add multisig commands to the main app
+app.add_typer(multisig_app, name="multisig")
 
 option_env = typer.Option("testnet", help="local, nightly, staging, testnet, prod")
 
