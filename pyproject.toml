@@ -19,6 +19,9 @@ paradex-cli = "paradex_cli.main:app"
 pytest = "^8.3.5"
 pytest-asyncio = "^0.26.0"
 
+[tool.pytest.ini_options]
+addopts = "-p no:ethereum"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

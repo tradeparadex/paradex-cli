@@ -149,7 +149,7 @@ def load_invoke(file) -> InvokeV1:
     return invoke
 
 
-def load_signature(file) -> list[int]:
+def load_signature(file) -> dict[str, list[int]]:
     return json.loads(file.read().strip())
 
 

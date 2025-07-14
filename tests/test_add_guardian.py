@@ -139,9 +139,9 @@ async def test_submit_invoke_tx(mock_account, setup_env_vars):
     with (
         patch("paradex_cli.main.load_invoke", return_value=mock_invoke),
         patch(
-            "paradex_cli.main.load_signature", side_effect=lambda f: mock_signature.get(f.name, [])
+            "paradex_cli.main.load_signature", side_effect=lambda f: mock_signature.get(f.name, {})
         ),
-        patch("paradex_cli.main._fetch_signers_pubkeys", return_value=["0x1", "0x2", "0x3"]),
+        patch("paradex_cli.main._fetch_signers_pubkeys", return_value=[0x1, 0x2, 0x3]),
         patch("paradex_cli.main.load_contract_from_account", return_value=MagicMock()),
         patch("builtins.open", mock_open(read_data="data")),
     ):
