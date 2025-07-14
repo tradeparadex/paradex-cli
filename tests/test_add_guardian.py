@@ -1,5 +1,4 @@
 import os
-import sys
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch, ANY
 
@@ -140,9 +139,9 @@ async def test_submit_invoke_tx(mock_account, setup_env_vars):
     with (
         patch("paradex_cli.main.load_invoke", return_value=mock_invoke),
         patch(
-            "paradex_cli.main.load_signature", side_effect=lambda f: mock_signature.get(f.name, [])
+            "paradex_cli.main.load_signature", side_effect=lambda f: mock_signature.get(f.name, {})
         ),
-        patch("paradex_cli.main._fetch_signers_pubkeys", return_value=["0x1", "0x2", "0x3"]),
+        patch("paradex_cli.main._fetch_signers_pubkeys", return_value=[0x1, 0x2, 0x3]),
         patch("paradex_cli.main.load_contract_from_account", return_value=MagicMock()),
         patch("builtins.open", mock_open(read_data="data")),
     ):
@@ -228,9 +227,9 @@ async def test_escape_guardian_logic():
 
     with patch("paradex_cli.main._check_multisig_required", return_value=False), \
          patch("paradex_cli.main._process_invoke", new_callable=AsyncMock) as mock_process:
-        
+
         await _escape_guardian(mock_account, mock_contract, "0xABC")
-        
+
         mock_contract.functions["escapeGuardian"].prepare_invoke_v1.assert_called_once()
         mock_account.prepare_invoke.assert_called_once_with(calls="prepared_call", max_fee=ANY)
         mock_process.assert_called_once()

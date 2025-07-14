@@ -10,6 +10,7 @@ from typing import Callable, Optional, Union
 import marshmallow_dataclass
 import typer
 from Crypto.Random import get_random_bytes
+
 from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.paradex import Paradex, ParadexAccount
 from paradex_py.utils import random_max_fee
@@ -24,6 +25,8 @@ from starknet_py.constants import RPC_CONTRACT_ERROR
 from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call
 from starknet_py.hash.selector import get_selector_from_name
+
+from paradex_cli.multisig import multisig_app
 
 
 app = typer.Typer(
@@ -42,6 +45,9 @@ app = typer.Typer(
     """,
     # rich_markup_mode="rich",
 )
+# Add multisig commands to the main app
+app.add_typer(multisig_app, name="multisig")
+
 option_env = typer.Option("testnet", help="local, nightly, staging, testnet, prod")
 
 
@@ -143,7 +149,7 @@ def load_invoke(file) -> InvokeV1:
     return invoke
 
 
-def load_signature(file) -> list[int]:
+def load_signature(file) -> dict[str, list[int]]:
     return json.loads(file.read().strip())
 
 
@@ -254,9 +260,9 @@ async def _fetch_signers_pubkeys(contract: Contract) -> list[int]:
     get_guardian_call = await contract.functions["getGuardian"].call()
     get_guardian_backup_call = await contract.functions["getGuardianBackup"].call()
     return [
-        hex(get_signer_call.signer),
-        hex(get_guardian_call.guardian),
-        hex(get_guardian_backup_call.guardianBackup),
+        get_signer_call.signer,
+        get_guardian_call.guardian,
+        get_guardian_backup_call.guardianBackup,
     ]
 
 
@@ -277,20 +283,25 @@ async def _sign_invoke_tx(paccount: ParadexAccount, file_path: str):
 async def _submit_invoke_tx(paccount: ParadexAccount, tx_file, sig_files):
     with open(tx_file) as f:
         invoke = load_invoke(f)
-    signatures = dict()
+    signatures: dict[str, list[int]] = dict()
     for sig_file in sig_files:
         with open(sig_file) as f:
             sig = load_signature(f)
-            signatures.update(sig)
-    sorted_sig = list[int]()
+            if isinstance(sig, dict):
+                signatures.update(sig)
+            else:
+                raise ValueError(f"Signature file {sig_file} does not contain a dict.")
+    sorted_sig: list[list[int]] = []
     contract = await load_contract_from_account(paccount.l2_address, paccount)
     pubkeys = await _fetch_signers_pubkeys(contract)
     for pubkey in pubkeys:
-        if pubkey in signatures:
-            sorted_sig.append(signatures[pubkey])
-    sorted_sig = sum(sorted_sig, [])
+        pubkey_hex = hex(pubkey)
+        if pubkey_hex in signatures:
+            sorted_sig.append(signatures[pubkey_hex])
+    # Flatten the list of lists
+    flat_sorted_sig = [item for sublist in sorted_sig for item in sublist]
     print("Contract address:", hex(contract.address))
-    invoke_result = await paccount.starknet.invoke(contract, invoke, sorted_sig)
+    invoke_result = await paccount.starknet.invoke(contract, invoke, flat_sorted_sig)
     print("Waiting tx hash:", hex(invoke_result.hash))
     await invoke_result.wait_for_acceptance()
 
@@ -678,7 +689,6 @@ def deposit_to_paraclear(
     asyncio.run(_deposit_to_paraclear(paccount, Decimal(amount_decimal)))
 
 
-
 async def _trigger_escape_guardian(paccount: ParadexAccount):
     contract = await load_contract_from_account(paccount.l2_address, paccount)
     print(f"Contract: {paccount.l2_address}")
@@ -688,7 +698,6 @@ async def _trigger_escape_guardian(paccount: ParadexAccount):
     call = contract.functions[funcName].prepare_invoke_v1(max_fee=random_max_fee())
     prepared_invoke = await paccount.starknet.prepare_invoke(calls=call, max_fee=random_max_fee())
     await _process_invoke(paccount.starknet, contract, False, prepared_invoke, funcName)
-
 
 
 @app.command()
@@ -720,6 +729,8 @@ async def _escape_guardian(saccount: StarknetAccount, contract: Contract, guardi
     )
     prepared_invoke = await saccount.prepare_invoke(calls=call, max_fee=random_max_fee())
     await _process_invoke(saccount, contract, need_multisig, prepared_invoke, funcName)
+
+
 @app.command()
 def escape_guardian(
     pub_key: str = typer.Argument(..., help="Public key of the new guardian"),
@@ -740,5 +751,7 @@ def escape_guardian(
     contract = asyncio.run(load_contract_from_account(paccount.l2_address, paccount))
     print("Contract address:", hex(paccount.l2_address))
     asyncio.run(_escape_guardian(paccount.starknet, contract, pub_key))
+
+
 if __name__ == "__main__":
     app()
