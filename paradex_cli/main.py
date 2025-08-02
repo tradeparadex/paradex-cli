@@ -5,7 +5,9 @@ import os
 import re
 import sys
 from decimal import Decimal
+import time
 from typing import Callable, Optional, Union
+import requests
 
 import marshmallow_dataclass
 import typer
@@ -24,6 +26,8 @@ from starknet_py.constants import RPC_CONTRACT_ERROR
 from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call
 from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.utils.typed_data import TypedData
+from starknet_py.common import int_from_bytes
 
 
 app = typer.Typer(
@@ -127,7 +131,6 @@ async def load_contract_from_account(
         address=address, provider=account.starknet, proxy_config=proxy_config
     )
     return contract
-
 
 def print_invoke(invoke: InvokeV1, file=sys.stdout):
     invoke_schema = marshmallow_dataclass.class_schema(InvokeV1)()
@@ -690,6 +693,95 @@ async def _trigger_escape_guardian(paccount: ParadexAccount):
     await _process_invoke(paccount.starknet, contract, False, prepared_invoke, funcName)
 
 
+async def _sign_register_sub_operator_message(vault_address: str, sub_operator_account: ParadexAccount, env: str):
+    paraclear_address = sub_operator_account.config.paraclear_address
+    chain_id = int_from_bytes(sub_operator_account.config.starknet_chain_id.encode())
+    paraclear_contract = await load_contract_from_account(
+        address=paraclear_address, account=sub_operator_account, proxy_config=False
+    )
+    transfer_registry_address = await paraclear_contract.functions["get_transfer_registry"].call()
+    transfer_registry_address = transfer_registry_address[0]
+    print("Contract address:", hex(transfer_registry_address))
+    contract = await load_contract_from_account(sub_operator_account.l2_address, sub_operator_account)
+    registry_contract = await load_contract_from_account(transfer_registry_address, sub_operator_account, proxy_config=False)
+    current_nonce_tuple = await registry_contract.functions["nonces"].call(
+        sub_operator_account.l2_address
+    )
+    current_nonce = current_nonce_tuple[0]
+    expiry_ms = int(time.time() * 1000) + 1000 * 60 * 60 * 24
+    print(f"Current nonce: {current_nonce}")
+    print(f"Expiry: {expiry_ms}")
+    message = TypedData.from_dict(
+        {
+            "types": {
+                "StarknetDomain": [
+                    {"name": "name", "type": "shortstring"},
+                    {"name": "version", "type": "shortstring"},
+                    {"name": "chainId", "type": "shortstring"},
+                    {"name": "revision", "type": "shortstring"},
+                ],
+                "SubOperatorRegistrationMessage": [
+                    {"name": "vault", "type": "ContractAddress"},
+                    {"name": "sub_operator", "type": "ContractAddress"},
+                    {"name": "nonce", "type": "felt"},
+                    {"name": "expiry", "type": "timestamp"},
+                ],
+            },
+            "primaryType": "SubOperatorRegistrationMessage",
+            "domain": {"name": "Paradex", "version": "v1", "chainId": hex(chain_id), "revision": 1},
+            "message": {
+                "vault": vault_address,
+                "sub_operator": hex(sub_operator_account.l2_address),
+                "nonce": current_nonce,
+                "expiry": expiry_ms,
+            },
+        }
+    )
+    signature = sub_operator_account.starknet.sign_message(typed_data=message)
+    print(f"Nonce: {current_nonce}")
+    print(f"Expiry: {expiry_ms}")
+    print(f"Signature: {signature}")
+    print(f"message: {message}")
+    
+async def _register_sub_operator(vault_address: str, sub_operator_address: str, nonce: int, expiry_ms: int, signature: list[int], operator_account: ParadexAccount):
+    contract = await load_contract_from_account(operator_account.l2_address, operator_account)
+    paraclear_address = operator_account.config.paraclear_address
+    chain_id = int_from_bytes(operator_account.config.starknet_chain_id.encode())
+    paraclear_contract = await load_contract_from_account(
+        address=paraclear_address, account=operator_account, proxy_config=False
+    )
+    transfer_registry_address = await paraclear_contract.functions["get_transfer_registry"].call()
+    transfer_registry_address = transfer_registry_address[0]
+    print("Contract address:", hex(transfer_registry_address))
+    registry_contract = await load_contract_from_account(transfer_registry_address, operator_account, proxy_config=False)
+    calls = [
+        registry_contract.functions["register_sub_operator"].prepare_invoke_v1(
+            vault=int_16(vault_address),
+            sub_operator=int_16(sub_operator_address),
+            nonce=nonce,
+            expiry=expiry_ms,
+            signature=signature,
+        ),
+    ]
+    
+    funcName = 'registerSubOperator'
+    prepared_invoke = await operator_account.starknet.prepare_invoke(calls=calls, max_fee=random_max_fee())
+    need_multisig = False
+    await _process_invoke(
+        operator_account.starknet, contract, need_multisig, prepared_invoke, funcName
+    )
+
+def _validate_sub_operator_account(sub_operator_account: ParadexAccount, vault_address: str):
+    account_info = sub_operator_account.api_client.fetch_account_info()['results'][0]
+    sub_operator_parent_account = account_info['parent_account'].split(':')[-1]
+    api_url = sub_operator_account.api_client.api_url
+    vault_url = api_url + "/vaults?address=" + vault_address
+    vault_info = requests.get(vault_url)
+    if vault_info.status_code != 200:
+        raise Exception("Vault not found")
+    vault_info = vault_info.json()['results'][0]
+    vault_owner = vault_info['owner_account']
+    return vault_owner == sub_operator_parent_account
 
 @app.command()
 def trigger_escape_guardian(
@@ -740,5 +832,66 @@ def escape_guardian(
     contract = asyncio.run(load_contract_from_account(paccount.l2_address, paccount))
     print("Contract address:", hex(paccount.l2_address))
     asyncio.run(_escape_guardian(paccount.starknet, contract, pub_key))
+    
+
+@app.command()
+def sign_register_sub_operator_message(
+    vault_address: str = typer.Argument(..., help="Vault address"),
+    env: str = option_env,
+):
+    """
+        Sign a message for the sub operator.
+    """
+    pclient = Paradex(env=env, l1_address="0x0000000000000000000000000000000000000000",l2_private_key=ACCOUNT_KEY)
+    sub_operator_account = ParadexAccount(config=pclient.config, l1_address="0x1234", l2_private_key=ACCOUNT_KEY)
+
+    # validate that account is subaccount and has same owner as vault
+    is_valid_sub_operator_account =  _validate_sub_operator_account(sub_operator_account, vault_address)
+    if not is_valid_sub_operator_account:
+        raise Exception("Sub operator account is not a subaccount of the vault")
+        
+    asyncio.run(_sign_register_sub_operator_message(vault_address, sub_operator_account, env))
+
+
+@app.command()
+def register_vault_sub_operator(
+    vault_address: str = typer.Argument(..., help="Vault address"),
+    sub_operator_address: str = typer.Argument(..., help="Sub operator address"),
+    nonce: int = typer.Argument(..., help="Nonce"),
+    expiry_ms_arg: str = typer.Argument(..., help="Expiry in ms"),
+    signature_arg: str = typer.Argument(
+        ..., help="Signed message of sub operator registration request"
+    ),
+    env: str = option_env,
+):
+    """
+    Register a sub operator for a vault.
+    Credentials / Caller should be the vault operator
+    Parameters:
+    - vault_address (str): Vault address.
+    - sub_operator_address (str): Sub Operator address.
+    - nonce (str): Nonce
+    - expiry_ms (str): Expiry in ms
+    - signature (str): Signed message of sub operator registration request
+    - env (str): Environment to use (default: option_env).
+    Returns:
+    None
+    """
+    pclient = Paradex(env=env)
+    operator_account = ParadexAccount(config=pclient.config, l1_address="0x0", l2_private_key=ACCOUNT_KEY)
+    expiry_ms = int(expiry_ms_arg)
+    signature: list[int] = []
+    try:
+        signature = [int(x) for x in signature_arg.strip('[]').split(',')]
+    except ValueError as e:
+        typer.echo(
+            "Invalid signature format provided. Please ensure it is a list of integers: \"[r,s]\"",
+            err=True,
+        )
+        sys.exit(1)
+
+    asyncio.run(_register_sub_operator(vault_address, sub_operator_address, nonce, expiry_ms, signature, operator_account))
+
+
 if __name__ == "__main__":
     app()
