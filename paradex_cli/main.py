@@ -711,8 +711,7 @@ async def _sign_register_sub_operator_message(vault_address: str, sub_operator_a
     expiry_ms = int(time.time() * 1000) + 1000 * 60 * 60 * 24
     print(f"Current nonce: {current_nonce}")
     print(f"Expiry: {expiry_ms}")
-    message = TypedData.from_dict(
-        {
+    message =         {
             "types": {
                 "StarknetDomain": [
                     {"name": "name", "type": "shortstring"},
@@ -736,8 +735,7 @@ async def _sign_register_sub_operator_message(vault_address: str, sub_operator_a
                 "expiry": expiry_ms,
             },
         }
-    )
-    signature = sub_operator_account.starknet.sign_message(typed_data=message)
+    signature = sub_operator_account.starknet.sign_message(message)
     print(f"Nonce: {current_nonce}")
     print(f"Expiry: {expiry_ms}")
     print(f"Signature: {signature}")
@@ -746,13 +744,11 @@ async def _sign_register_sub_operator_message(vault_address: str, sub_operator_a
 async def _register_sub_operator(vault_address: str, sub_operator_address: str, nonce: int, expiry_ms: int, signature: list[int], operator_account: ParadexAccount):
     contract = await load_contract_from_account(operator_account.l2_address, operator_account)
     paraclear_address = operator_account.config.paraclear_address
-    chain_id = int_from_bytes(operator_account.config.starknet_chain_id.encode())
     paraclear_contract = await load_contract_from_account(
         address=paraclear_address, account=operator_account, proxy_config=False
     )
     transfer_registry_address = await paraclear_contract.functions["get_transfer_registry"].call()
     transfer_registry_address = transfer_registry_address[0]
-    print("Contract address:", hex(transfer_registry_address))
     registry_contract = await load_contract_from_account(transfer_registry_address, operator_account, proxy_config=False)
     calls = [
         registry_contract.functions["register_sub_operator"].prepare_invoke_v1(
@@ -770,11 +766,12 @@ async def _register_sub_operator(vault_address: str, sub_operator_address: str, 
     await _process_invoke(
         operator_account.starknet, contract, need_multisig, prepared_invoke, funcName
     )
+    print(f'Sub operator {sub_operator_address} registered successfully for vault {vault_address}')
 
-def _validate_sub_operator_account(sub_operator_account: ParadexAccount, vault_address: str):
-    account_info = sub_operator_account.api_client.fetch_account_info()['results'][0]
+def _validate_sub_operator_account(sub_operator_paradex_client: Paradex, vault_address: str):
+    account_info = sub_operator_paradex_client.api_client.fetch_account_info()['results'][0]
     sub_operator_parent_account = account_info['parent_account'].split(':')[-1]
-    api_url = sub_operator_account.api_client.api_url
+    api_url = sub_operator_paradex_client.api_client.api_url
     vault_url = api_url + "/vaults?address=" + vault_address
     vault_info = requests.get(vault_url)
     if vault_info.status_code != 200:
@@ -846,9 +843,11 @@ def sign_register_sub_operator_message(
     sub_operator_account = ParadexAccount(config=pclient.config, l1_address="0x1234", l2_private_key=ACCOUNT_KEY)
 
     # validate that account is subaccount and has same owner as vault
-    is_valid_sub_operator_account =  _validate_sub_operator_account(sub_operator_account, vault_address)
+    is_valid_sub_operator_account =  _validate_sub_operator_account(pclient, vault_address)
     if not is_valid_sub_operator_account:
         raise Exception("Sub operator account is not a subaccount of the vault")
+    else:
+        print("Sub operator account & vault validated successfully!")
         
     asyncio.run(_sign_register_sub_operator_message(vault_address, sub_operator_account, env))
 
