@@ -711,7 +711,8 @@ async def _sign_register_sub_operator_message(vault_address: str, sub_operator_a
     expiry_ms = int(time.time() * 1000) + 1000 * 60 * 60 * 24
     print(f"Current nonce: {current_nonce}")
     print(f"Expiry: {expiry_ms}")
-    message =         {
+    message =  TypedData.from_dict(
+        {
             "types": {
                 "StarknetDomain": [
                     {"name": "name", "type": "shortstring"},
@@ -734,8 +735,10 @@ async def _sign_register_sub_operator_message(vault_address: str, sub_operator_a
                 "nonce": current_nonce,
                 "expiry": expiry_ms,
             },
-        }
-    signature = sub_operator_account.starknet.sign_message(message)
+        })
+    signature = sub_operator_account.starknet.signer.sign_message(typed_data=message, account_address=sub_operator_account.l2_address)
+    
+    
     print(f"Nonce: {current_nonce}")
     print(f"Expiry: {expiry_ms}")
     print(f"Signature: {signature}")

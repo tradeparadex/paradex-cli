@@ -8,7 +8,7 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 typer = {extras = ["all"], version = "^0.15.2"}
-paradex_py = "^0.4.7"
+paradex_py = "^0.4.8" # update against version in PR #10 in paradex-py repo
 rich = "^14.0.0"
 requests = "^2.32.3"
 
