@@ -6,9 +6,9 @@ authors = ["Paradex Team <support@paradex.trade>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.10,<3.13"
 typer = {extras = ["all"], version = "^0.15.2"}
-paradex_py = "^0.4.4"
+paradex_py = "^0.5.1"
 rich = "^14.0.0"
 
 [tool.poetry.scripts]
@@ -17,6 +17,16 @@ paradex-cli = "paradex_cli.main:app"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
 pytest-asyncio = "^0.26.0"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::RuntimeWarning",
+    "ignore::DeprecationWarning:eth_utils",
+    "ignore::UserWarning:eth_utils",
+]
+addopts = "-W ignore::RuntimeWarning"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

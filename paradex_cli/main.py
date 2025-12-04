@@ -8,17 +8,16 @@ from decimal import Decimal
 from typing import Callable, Optional, Union
 
 import marshmallow_dataclass
+import secrets
 import typer
-from Crypto.Random import get_random_bytes
 from paradex_py.account.starknet import Account as StarknetAccount
 from paradex_py.paradex import Paradex, ParadexAccount
-from paradex_py.utils import random_max_fee
 from starknet_py.cairo.felt import decode_shortstring
 from starknet_py.contract import Contract
 from starknet_py.net.signer.stark_curve_signer import KeyPair
 from starknet_py.proxy.contract_abi_resolver import ProxyConfig
 from starknet_py.proxy.proxy_check import ArgentProxyCheck, OpenZeppelinProxyCheck, ProxyCheck
-from starknet_py.net.models import Address, AddressRepresentation, InvokeV1
+from starknet_py.net.models import Address, AddressRepresentation, InvokeV3
 from starknet_py.net.client import Client
 from starknet_py.constants import RPC_CONTRACT_ERROR
 from starknet_py.net.client_errors import ClientError
@@ -61,10 +60,6 @@ def check_env_vars():
 # Accounts for Private StarkNet
 ACCOUNT_ADDRESS = os.environ.get("PARADEX_ACCOUNT_ADDRESS")
 ACCOUNT_KEY = os.environ.get("PARADEX_ACCOUNT_KEY")
-
-# export PSN_FULL_NODE_URL = "https://juno.api.prod.paradex.trade/rpc/v0_7"
-# export PSN_CHAIN_NAME = PRIVATE_SN_PARACLEAR_MAINNET
-# https://github.com/argentlabs/argent-contracts-starknet/blob/main/src/account/README.md
 
 
 def int_16(val):
@@ -129,17 +124,18 @@ async def load_contract_from_account(
     return contract
 
 
-def print_invoke(invoke: InvokeV1, file=sys.stdout):
-    invoke_schema = marshmallow_dataclass.class_schema(InvokeV1)()
+def print_invoke(invoke: InvokeV3, file=sys.stdout):
+    invoke_schema = marshmallow_dataclass.class_schema(InvokeV3)()
     print(invoke_schema.dumps(invoke), file=file)
 
 
-def load_invoke(file) -> InvokeV1:
-    invoke_schema = marshmallow_dataclass.class_schema(InvokeV1)()
-    invoke: InvokeV1 = invoke_schema.loads(file.read().strip())
+def load_invoke(file) -> InvokeV3:
+    invoke_schema = marshmallow_dataclass.class_schema(InvokeV3)()
+    invoke: InvokeV3 = invoke_schema.loads(file.read().strip())
     # Needed because `calldata` marshmallow_field is fields.String()
-    calldata = list(map(lambda v: int(v), invoke.calldata))
-    invoke = dataclasses.replace(invoke, calldata=calldata)
+    if hasattr(invoke, 'calldata'):
+        calldata = list(map(lambda v: int(v), invoke.calldata))
+        invoke = dataclasses.replace(invoke, calldata=calldata)
     return invoke
 
 
@@ -152,11 +148,10 @@ async def _change_signer(saccount: StarknetAccount, contract: Contract, pub_key:
 
     print("Change signer...")
     funcName = 'changeGuardian'
-    call = contract.functions[funcName].prepare_invoke_v1(
+    call = contract.functions[funcName].prepare_invoke_v3(
         newGuardian=int_16(pub_key),
-        max_fee=random_max_fee(),
     )
-    prepared_invoke = await saccount.prepare_invoke(calls=call, max_fee=random_max_fee())
+    prepared_invoke = await saccount.prepare_invoke(calls=call, auto_estimate=True)
     await _process_invoke(saccount, contract, need_multisig, prepared_invoke, funcName)
 
 
@@ -166,11 +161,10 @@ async def _change_guardian(saccount: StarknetAccount, contract: Contract, guardi
 
     print("Change guardian...")
     funcName = 'changeGuardian'
-    call = contract.functions[funcName].prepare_invoke_v1(
+    call = contract.functions[funcName].prepare_invoke_v3(
         newGuardian=int_16(guardian_pub_key),
-        max_fee=random_max_fee(),
     )
-    prepared_invoke = await saccount.prepare_invoke(calls=call, max_fee=random_max_fee())
+    prepared_invoke = await saccount.prepare_invoke(calls=call, auto_estimate=True)
     await _process_invoke(saccount, contract, need_multisig, prepared_invoke, funcName)
 
 
@@ -179,11 +173,10 @@ async def _change_guardian_backup(saccount: StarknetAccount, contract: Contract,
 
     print("Change guardian backup...")
     funcName = 'changeGuardianBackup'
-    call = contract.functions[funcName].prepare_invoke_v1(
+    call = contract.functions[funcName].prepare_invoke_v3(
         newGuardian=int_16(pub_key),
-        max_fee=random_max_fee(),
     )
-    prepared_invoke = await saccount.prepare_invoke(calls=call, max_fee=random_max_fee())
+    prepared_invoke = await saccount.prepare_invoke(calls=call, auto_estimate=True)
 
     await _process_invoke(saccount, contract, need_multisig, prepared_invoke, funcName)
 
@@ -210,7 +203,7 @@ async def _process_invoke(
     saccount: StarknetAccount,
     contract: Contract,
     need_multisig,
-    prepared_invoke: InvokeV1,
+    prepared_invoke: InvokeV3,
     multisig_filename: str,
 ):
     if not need_multisig:
@@ -339,7 +332,7 @@ def add_guardian_backup(
         if os.path.exists(guardian_backup_key_file):
             private = KeyPair.from_private_key(open(guardian_backup_key_file).read())
         else:
-            private = KeyPair.from_private_key("0x" + get_random_bytes(32).hex())
+            private = KeyPair.from_private_key("0x" + secrets.token_bytes(32).hex())
             with open(guardian_backup_key_file, "w") as file:
                 file.write(hex(private.private_key))
         pub_key = hex(private.public_key)
@@ -371,7 +364,7 @@ def add_guardian(
         if os.path.exists(guardian_key_file):
             private = KeyPair.from_private_key(open(guardian_key_file).read())
         else:
-            private = KeyPair.from_private_key("0x" + get_random_bytes(32).hex())
+            private = KeyPair.from_private_key("0x" + secrets.token_bytes(32).hex())
             with open(guardian_key_file, "w") as file:
                 file.write(hex(private.private_key))
         pub_key = hex(private.public_key)
@@ -403,7 +396,7 @@ def change_signer(
         if os.path.exists(guardian_key_file):
             private = KeyPair.from_private_key(open(guardian_key_file).read())
         else:
-            private = KeyPair.from_private_key("0x" + get_random_bytes(32).hex())
+            private = KeyPair.from_private_key("0x" + secrets.token_bytes(32).hex())
             with open(guardian_key_file, "w") as file:
                 file.write(hex(private.private_key))
         pub_key = hex(private.public_key)
@@ -459,10 +452,10 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount, proxy_config=True
+        address=paccount.l2_address, account=paccount
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount, proxy_config=True
+        address=paraclear_address, account=paccount, proxy_config=False
     )
     print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
@@ -476,7 +469,7 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     l2_bridge_version = (
         l2_bridge_version[0] if type(l2_bridge_version) is tuple else l2_bridge_version.version
     )
-    print(f"USDC Bridge Contract: {l2_bridge_contract}")
+    print(f"USDC Bridge Contract: {hex(l2_bridge_contract.address)}")
 
     token_asset_bal = await paraclear_contract.functions["get_token_asset_balance"].call(
         account=paccount.l2_address, token_address=int_16(usdc_address)
@@ -484,20 +477,20 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     balance = token_asset_bal[0]
     print(f"USDC balance on paraclear: {balance / 10**paraclear_decimals}")
     amount_paraclear = int(amount_decimal * 10**paraclear_decimals)
-    print(f"Amount to withdraw from paraclear: {amount_paraclear}")
+    print(f"Amount to withdraw from paraclear: {amount_decimal} USDC -> {amount_paraclear}")
     amount_bridge = int(amount_decimal * 10**usdc_decimals)
-    print(f"Amount to withdraw from bridge: {amount_bridge}")
+    print(f"Amount to withdraw from bridge: {amount_decimal} USDC -> {amount_bridge}")
 
     l1_recipient_arg = int_16(l1_recipient)
     l1_recipient_arg = (
         {"address": l1_recipient_arg} if l2_bridge_version == 2 else l1_recipient_arg
     )
     calls = [
-        paraclear_contract.functions["withdraw"].prepare_invoke_v1(
+        paraclear_contract.functions["withdraw"].prepare_invoke_v3(
             token_address=int_16(usdc_address),
             amount=amount_paraclear,
         ),
-        l2_bridge_contract.functions["initiate_withdraw"].prepare_invoke_v1(
+        l2_bridge_contract.functions["initiate_withdraw"].prepare_invoke_v3(
             l1_recipient=l1_recipient_arg,
             amount=amount_bridge,
         ),
@@ -505,7 +498,7 @@ async def _withdraw_to_l1(paccount: ParadexAccount, l1_recipient: str, amount_de
     need_multisig = await _check_multisig_required(account_contract)
 
     funcName = 'withdrawToL1'
-    prepared_invoke = await paccount.starknet.prepare_invoke(calls=calls, max_fee=random_max_fee())
+    prepared_invoke = await paccount.starknet.prepare_invoke(calls=calls, auto_estimate=True)
 
     await _process_invoke(
         paccount.starknet, account_contract, need_multisig, prepared_invoke, funcName
@@ -541,10 +534,10 @@ async def _transfer_on_l2(
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount, proxy_config=True
+        address=paccount.l2_address, account=paccount
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount, proxy_config=True
+        address=paraclear_address, account=paccount, proxy_config=False
     )
     print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
@@ -565,14 +558,14 @@ async def _transfer_on_l2(
     amount_bridge = int(amount_decimal * 10**usdc_decimals)
     print(f"Amount to transfer to {target_l2_address}: {amount_bridge}")
     calls = [
-        paraclear_contract.functions["withdraw"].prepare_invoke_v1(
+        paraclear_contract.functions["withdraw"].prepare_invoke_v3(
             token_address=int_16(usdc_address),
             amount=amount_paraclear,
         ),
-        usdc_contract.functions["increase_allowance"].prepare_invoke_v1(
+        usdc_contract.functions["increase_allowance"].prepare_invoke_v3(
             spender=int_16(paraclear_address), added_value=amount_bridge
         ),
-        paraclear_contract.functions["deposit_on_behalf_of"].prepare_invoke_v1(
+        paraclear_contract.functions["deposit_on_behalf_of"].prepare_invoke_v3(
             recipient=int_16(target_l2_address),
             token_address=int_16(usdc_address),
             amount=amount_paraclear,
@@ -581,7 +574,7 @@ async def _transfer_on_l2(
     need_multisig = await _check_multisig_required(account_contract)
 
     funcName = 'transferOnL2'
-    prepared_invoke = await paccount.starknet.prepare_invoke(calls=calls, max_fee=random_max_fee())
+    prepared_invoke = await paccount.starknet.prepare_invoke(calls=calls, auto_estimate=True)
 
     await _process_invoke(
         paccount.starknet, account_contract, need_multisig, prepared_invoke, funcName
@@ -614,10 +607,10 @@ async def _deposit_to_paraclear(paccount: ParadexAccount, amount_decimal: Decima
     usdc_address = paccount.config.bridged_tokens[0].l2_token_address
 
     account_contract = await load_contract_from_account(
-        address=paccount.l2_address, account=paccount, proxy_config=True
+        address=paccount.l2_address, account=paccount
     )
     paraclear_contract = await load_contract_from_account(
-        address=paraclear_address, account=paccount, proxy_config=True
+        address=paraclear_address, account=paccount, proxy_config=False
     )
     print(f"Paraclear Contract: {paraclear_address}")
     paraclear_decimals = paccount.config.paraclear_decimals
@@ -641,17 +634,17 @@ async def _deposit_to_paraclear(paccount: ParadexAccount, amount_decimal: Decima
         else "increaseAllowance"
     )
     calls = [
-        usdc_contract.functions[increase_allowance_func_name].prepare_invoke_v1(
+        usdc_contract.functions[increase_allowance_func_name].prepare_invoke_v3(
             spender=int_16(paraclear_address), added_value=amount_usdc
         ),
-        paraclear_contract.functions["deposit"].prepare_invoke_v1(
+        paraclear_contract.functions["deposit"].prepare_invoke_v3(
             int_16(usdc_address), amount_paraclear
         ),
     ]
     need_multisig = await _check_multisig_required(account_contract)
 
     funcName = 'depositToParaclear'
-    prepared_invoke = await paccount.starknet.prepare_invoke(calls=calls, max_fee=random_max_fee())
+    prepared_invoke = await paccount.starknet.prepare_invoke(calls=calls, auto_estimate=True)
 
     await _process_invoke(
         paccount.starknet, account_contract, need_multisig, prepared_invoke, funcName
@@ -685,8 +678,8 @@ async def _trigger_escape_guardian(paccount: ParadexAccount):
 
     print("Trigger escape guardian...")
     funcName = 'triggerEscapeGuardian'
-    call = contract.functions[funcName].prepare_invoke_v1(max_fee=random_max_fee())
-    prepared_invoke = await paccount.starknet.prepare_invoke(calls=call, max_fee=random_max_fee())
+    call = contract.functions[funcName].prepare_invoke_v3()
+    prepared_invoke = await paccount.starknet.prepare_invoke(calls=call, auto_estimate=True)
     await _process_invoke(paccount.starknet, contract, False, prepared_invoke, funcName)
 
 
@@ -714,12 +707,13 @@ async def _escape_guardian(saccount: StarknetAccount, contract: Contract, guardi
 
     print("Change guardian wallet...")
     funcName = 'escapeGuardian'
-    call = contract.functions[funcName].prepare_invoke_v1(
+    call = contract.functions[funcName].prepare_invoke_v3(
         newGuardian=int_16(guardian_pub_key),
-        max_fee=random_max_fee(),
     )
-    prepared_invoke = await saccount.prepare_invoke(calls=call, max_fee=random_max_fee())
+    prepared_invoke = await saccount.prepare_invoke(calls=call, auto_estimate=True)
     await _process_invoke(saccount, contract, need_multisig, prepared_invoke, funcName)
+
+
 @app.command()
 def escape_guardian(
     pub_key: str = typer.Argument(..., help="Public key of the new guardian"),
