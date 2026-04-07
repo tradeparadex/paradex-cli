@@ -15,6 +15,7 @@ from paradex_cli import (
     _transfer_on_l2,
     _withdraw_to_l1,
     _escape_guardian,
+    _sign_register_sub_operator_message,
     app,
     load_contract_from_account,
 )
@@ -431,3 +432,82 @@ def test_escape_guardian_command(setup_env_vars):
         assert result.exit_code == 0
         mock_account.assert_called_once()
         mock_async_run.assert_called()
+
+
+VAULT_ADDRESS = "0xaabbcc"
+SUB_OPERATOR_ADDRESS = "0xddeeff"
+MOCK_NONCE = 7
+MOCK_SIGNATURE = [111, 222]
+
+
+@pytest.mark.asyncio
+async def test_sign_register_sub_operator_message(mock_account, setup_env_vars):
+    """Unit-test the async signing helper."""
+    mock_account.starknet.client.call_contract = AsyncMock(return_value=[MOCK_NONCE])
+    mock_account.starknet.sign_message = MagicMock(return_value=MOCK_SIGNATURE)
+    mock_account.config.starknet_chain_id = "0x5354524b4e45545f54455354"
+
+    with (
+        patch("paradex_cli.main.Paradex") as mock_paradex_cls,
+        patch("paradex_cli.main.ParadexAccount", return_value=mock_account),
+        patch("paradex_cli.main.time") as mock_time,
+    ):
+        mock_paradex_cls.return_value.config.starknet_chain_id = (
+            mock_account.config.starknet_chain_id
+        )
+        mock_time.time.return_value = 1_000_000.0  # fixed timestamp for determinism
+
+        await _sign_register_sub_operator_message(
+            VAULT_ADDRESS, SUB_OPERATOR_ADDRESS, "testnet"
+        )
+
+    mock_account.starknet.client.call_contract.assert_awaited_once()
+    call_arg = mock_account.starknet.client.call_contract.call_args[1]["call"]
+    assert call_arg.calldata == [int(SUB_OPERATOR_ADDRESS, 16)]
+    mock_account.starknet.sign_message.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sign_register_sub_operator_message_invalid_env(mock_account, setup_env_vars):
+    """Unsupported environment must exit with a non-zero code."""
+    import typer
+
+    with pytest.raises(typer.Exit):
+        await _sign_register_sub_operator_message(
+            VAULT_ADDRESS, SUB_OPERATOR_ADDRESS, "unknown_env"
+        )
+
+
+def test_sign_register_sub_operator_message_command(setup_env_vars):
+    """CLI smoke-test: command wires args correctly and exits 0."""
+    mock_account_obj = MagicMock()
+    mock_account_obj.starknet.client.call_contract = AsyncMock(return_value=[MOCK_NONCE])
+    mock_account_obj.starknet.sign_message = MagicMock(return_value=MOCK_SIGNATURE)
+    mock_account_obj.config.starknet_chain_id = "0x5354524b4e45545f54455354"
+
+    with (
+        patch("paradex_cli.main.Paradex") as mock_paradex_cls,
+        patch("paradex_cli.main.ParadexAccount", return_value=mock_account_obj),
+        patch("paradex_cli.main.asyncio.run", side_effect=mock_asyncio_run),
+        patch("paradex_cli.main.time") as mock_time,
+    ):
+        mock_paradex_cls.return_value.config.starknet_chain_id = (
+            mock_account_obj.config.starknet_chain_id
+        )
+        mock_time.time.return_value = 1_000_000.0
+
+        result = runner.invoke(
+            app,
+            [
+                "sign-register-sub-operator-message",
+                VAULT_ADDRESS,
+                SUB_OPERATOR_ADDRESS,
+                "--env",
+                "testnet",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert "Nonce:" in result.output
+    assert "Expiry:" in result.output
+    assert "Signature:" in result.output
