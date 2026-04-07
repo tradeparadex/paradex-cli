@@ -98,8 +98,6 @@ operator can call `register_sub_operator` on the Transfer Registry contract.
 `PARADEX_ACCOUNT_KEY` must be the **sub-operator's** private key.
 
 ```sh
-PARADEX_ACCOUNT_ADDRESS=<sub_operator_address> \
-PARADEX_ACCOUNT_KEY=<sub_operator_private_key> \
 paradex-cli sign-register-sub-operator-message VAULT_ADDRESS SUB_OPERATOR_ADDRESS --env ENVIRONMENT
 ```
 
