@@ -20,6 +20,28 @@ Or using Poetry:
 poetry add paradex_cli
 ```
 
+## Environment Variables
+
+All commands require the following environment variables:
+
+| Variable | Description |
+|---|---|
+| `PARADEX_ACCOUNT_ADDRESS` | Your Paradex L2 account address |
+| `PARADEX_ACCOUNT_KEY` | Your Paradex L2 account private key |
+
+You can pass them inline:
+
+```sh
+PARADEX_ACCOUNT_ADDRESS=0x... PARADEX_ACCOUNT_KEY=0x... paradex-cli <command>
+```
+
+Or export them in your shell session (or `.env` file):
+
+```sh
+export PARADEX_ACCOUNT_ADDRESS=0x...
+export PARADEX_ACCOUNT_KEY=0x...
+```
+
 ## Commands
 
 ### Print Account Info
@@ -63,6 +85,21 @@ paradex_cli submit-invoke-tx TX_FILE_PATH SIG_FILES --env ENVIRONMENT
 ```
 paradex_cli trigger-escape-guardian --env ENVIRONMENT
 ```
+
+### Sign Register Sub-Operator Message
+
+Generates an off-chain SNIP-12 signature that a sub-operator must produce before a vault
+operator can call `register_sub_operator` on the Transfer Registry contract.
+
+`PARADEX_ACCOUNT_KEY` must be the **sub-operator's** private key.
+
+```sh
+PARADEX_ACCOUNT_ADDRESS=<sub_operator_address> \
+PARADEX_ACCOUNT_KEY=<sub_operator_private_key> \
+paradex-cli sign-register-sub-operator-message VAULT_ADDRESS SUB_OPERATOR_ADDRESS --env ENVIRONMENT
+```
+
+Share the printed `Nonce`, `Expiry`, and `Signature` with the vault operator to complete on-chain registration.
 
 ## Development
 
