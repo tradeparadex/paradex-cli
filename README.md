@@ -8,16 +8,48 @@ including printing account info, adding guardians, changing signers, and more.
 
 ## Installation
 
-You can install the package via pip:
+**Run without installing (recommended):**
 
 ```sh
-pip install paradex_cli
+uvx paradex-cli <command>
 ```
 
-Or using Poetry:
+**Install as a persistent tool:**
 
 ```sh
-poetry add paradex_cli
+uv tool install paradex-cli
+paradex-cli <command>
+```
+
+## Environment Variables
+
+All commands require `PARADEX_ACCOUNT_ADDRESS` and `PARADEX_ACCOUNT_KEY`.
+
+**Option 1 — `.env` file (recommended)**
+
+Copy the example and fill in your credentials. The CLI auto-loads `.env` from the current directory.
+
+```sh
+cp .env.example .env
+# edit .env with your address and private key
+paradex-cli <command>
+```
+
+**Option 2 — explicit file path**
+
+Useful when you maintain separate credential files per environment:
+
+```sh
+paradex-cli --env-file ~/.paradex/prod.env <command>
+```
+
+**Option 3 — inline / shell export**
+
+```sh
+PARADEX_ACCOUNT_ADDRESS=0x... PARADEX_ACCOUNT_KEY=0x... paradex-cli <command>
+# or
+export PARADEX_ACCOUNT_ADDRESS=0x...
+export PARADEX_ACCOUNT_KEY=0x...
 ```
 
 ## Commands
@@ -64,6 +96,19 @@ paradex_cli submit-invoke-tx TX_FILE_PATH SIG_FILES --env ENVIRONMENT
 paradex_cli trigger-escape-guardian --env ENVIRONMENT
 ```
 
+### Sign Register Sub-Operator Message
+
+Generates an off-chain SNIP-12 signature that a sub-operator must produce before a vault
+operator can call `register_sub_operator` on the Transfer Registry contract.
+
+`PARADEX_ACCOUNT_KEY` must be the **sub-operator's** private key.
+
+```sh
+paradex-cli sign-register-sub-operator-message VAULT_ADDRESS SUB_OPERATOR_ADDRESS --env ENVIRONMENT
+```
+
+Share the printed `Nonce`, `Expiry`, and `Signature` with the vault operator to complete on-chain registration.
+
 ## Development
 
 To contribute to this project, follow these steps:
@@ -77,18 +122,14 @@ cd paradex_cli
 
 ### 2. Install Dependencies
 
-Install the dependencies using Poetry:
-
 ```sh
-poetry install
+uv sync
 ```
 
 ### 3. Run Tests
 
-Ensure everything is working by running the tests:
-
 ```sh
-poetry run pytest
+uv run pytest
 ```
 
 ### 4. Make Your Changes
@@ -101,10 +142,8 @@ Add tests for your new features or bug fixes.
 
 ### 6. Run Tests Again
 
-Run the tests again to make sure everything is still working:
-
 ```sh
-poetry run pytest
+uv run pytest
 ```
 
 ### 7. Commit Your Changes
@@ -123,22 +162,12 @@ Create a pull request against the `main` branch of this repository.
 
 ## Building the Project
 
-To build the project, run:
-
 ```sh
-poetry build
+uv build
 ```
 
 ## Publishing the Project
 
-To publish the project to PyPI, run:
-
 ```sh
-poetry publish --build
-```
-
-Make sure you have configured your PyPI token:
-
-```sh
-poetry config pypi-token.pypi <your-token>
+UV_PUBLISH_TOKEN=<your-pypi-token> uv publish
 ```

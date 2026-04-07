@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import time
 from decimal import Decimal
 from typing import Callable, Optional, Union
 
@@ -23,6 +24,8 @@ from starknet_py.constants import RPC_CONTRACT_ERROR
 from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call
 from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.utils.typed_data import TypedData
+from dotenv import load_dotenv
 
 
 app = typer.Typer(
@@ -45,10 +48,18 @@ option_env = typer.Option("testnet", help="local, nightly, staging, testnet, pro
 
 
 @app.callback()
-def check_env_vars():
+def check_env_vars(
+    env_file: Optional[str] = typer.Option(None, "--env-file", help="Path to a .env file with credentials"),
+):
     """
     Check if required environment variables are set.
     """
+    if env_file:
+        load_dotenv(env_file, override=True)
+        global ACCOUNT_ADDRESS, ACCOUNT_KEY
+        ACCOUNT_ADDRESS = os.environ.get("PARADEX_ACCOUNT_ADDRESS")
+        ACCOUNT_KEY = os.environ.get("PARADEX_ACCOUNT_KEY")
+
     required_vars = ["PARADEX_ACCOUNT_ADDRESS", "PARADEX_ACCOUNT_KEY"]
     missing_vars = [var for var in required_vars if var not in os.environ]
 
@@ -58,8 +69,17 @@ def check_env_vars():
 
 
 # Accounts for Private StarkNet
+load_dotenv()  # no-op if no .env present; populates os.environ before reading below
 ACCOUNT_ADDRESS = os.environ.get("PARADEX_ACCOUNT_ADDRESS")
 ACCOUNT_KEY = os.environ.get("PARADEX_ACCOUNT_KEY")
+
+# Transfer Registry contract addresses per environment
+TRANSFER_REGISTRY_ADDRESSES = {
+    "nightly": "0x4022ac4eb15dcacd45e441c5b070a12d0c4163ab26d45da8e9e01b3451aabe2",
+    "staging": "0x5be80d1cceb9379a0d04141aa537cb936c41fddd0b7a3136d697227614a2658",
+    "testnet": "0x057311bfe61fb0ba49dd49410eee51c1a605fe07ec5e4e6e64472f4fde84b43e",
+    "prod": "0x0355b9f48262d37607098294a37aea883cf34cb81458039e8c0d0871a4f4e4e8",
+}
 
 
 def int_16(val):
@@ -734,5 +754,109 @@ def escape_guardian(
     contract = asyncio.run(load_contract_from_account(paccount.l2_address, paccount))
     print("Contract address:", hex(paccount.l2_address))
     asyncio.run(_escape_guardian(paccount.starknet, contract, pub_key))
+
+
+async def _sign_register_sub_operator_message(
+    vault_address: str,
+    sub_operator_address: str,
+    env: str,
+):
+    """
+    Build and sign the SNIP-12 typed data message required to register a sub-operator
+    to a vault via the Transfer Registry contract.
+
+    The caller must be the sub-operator: set PARADEX_ACCOUNT_KEY to the sub-operator's
+    private key and pass its on-chain address as sub_operator_address.
+
+    Prints nonce, expiry, and the [r, s] signature to stdout.  Pass those values to
+    the vault operator so they can submit register_sub_operator on-chain.
+    """
+    if env not in TRANSFER_REGISTRY_ADDRESSES:
+        typer.echo(
+            f"Unsupported environment '{env}'. "
+            f"Choose from: {', '.join(TRANSFER_REGISTRY_ADDRESSES)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    pclient = Paradex(env=env)
+    paccount = ParadexAccount(config=pclient.config, l1_address="0x0", l2_private_key=ACCOUNT_KEY)
+
+    transfer_registry_address = TRANSFER_REGISTRY_ADDRESSES[env]
+
+    # Fetch current nonce for the sub-operator from the registry contract
+    result = await paccount.starknet.client.call_contract(
+        call=Call(
+            to_addr=int(transfer_registry_address, 16),
+            selector=get_selector_from_name("nonces"),
+            calldata=[int(sub_operator_address, 16)],
+        ),
+    )
+    current_nonce = result[0]
+
+    expiry_ms = int(time.time() * 1000) + 1000 * 60 * 60 * 24  # 24 hours from now
+    chain_id = pclient.config.starknet_chain_id  # hex string, e.g. "0x505249564154..."
+
+    message = TypedData.from_dict(
+        {
+            "types": {
+                "StarknetDomain": [
+                    {"name": "name", "type": "shortstring"},
+                    {"name": "version", "type": "shortstring"},
+                    {"name": "chainId", "type": "shortstring"},
+                    {"name": "revision", "type": "shortstring"},
+                ],
+                "SubOperatorRegistrationMessage": [
+                    {"name": "vault", "type": "ContractAddress"},
+                    {"name": "sub_operator", "type": "ContractAddress"},
+                    {"name": "nonce", "type": "felt"},
+                    {"name": "expiry", "type": "timestamp"},
+                ],
+            },
+            "primaryType": "SubOperatorRegistrationMessage",
+            "domain": {
+                "name": "Paradex",
+                "version": "v1",
+                "chainId": chain_id,
+                "revision": 1,
+            },
+            "message": {
+                "vault": vault_address,
+                "sub_operator": sub_operator_address,
+                "nonce": current_nonce,
+                "expiry": expiry_ms,
+            },
+        }
+    )
+
+    signature = paccount.starknet.sign_message(typed_data=message)
+    print(f"Nonce: {current_nonce}")
+    print(f"Expiry: {expiry_ms}")
+    print(f"Signature: {list(signature)}")
+
+
+@app.command()
+def sign_register_sub_operator_message(
+    vault_address: str = typer.Argument(..., help="Vault contract address"),
+    sub_operator_address: str = typer.Argument(..., help="Sub-operator address to register"),
+    env: str = option_env,
+):
+    """
+    Generate a signature for registering a sub-operator to a vault.
+
+    The sub-operator signs an off-chain SNIP-12 message that the vault operator
+    later submits on-chain via register_sub_operator.
+
+    PARADEX_ACCOUNT_KEY must be the private key of the sub-operator account
+    identified by sub_operator_address.
+
+    Outputs the nonce, expiry timestamp (ms), and [r, s] signature.  Share
+    these values with the vault operator to complete the registration.
+    """
+    asyncio.run(
+        _sign_register_sub_operator_message(vault_address, sub_operator_address, env)
+    )
+
+
 if __name__ == "__main__":
     app()

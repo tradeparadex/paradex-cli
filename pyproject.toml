@@ -1,22 +1,25 @@
-[tool.poetry]
+[project]
 name = "paradex-cli"
-version = "0.1.4"
+version = "0.1.5"
 description = "CLI for interacting with Paradex API and Paraclear smart contracts"
-authors = ["Paradex Team <support@paradex.trade>"]
-license = "MIT"
+authors = [{name = "Paradex Team", email = "support@paradex.trade"}]
+license = {text = "MIT"}
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "typer>=0.15.2",
+    "paradex_py>=0.5.1",
+    "rich>=14.0.0",
+    "python-dotenv>=1.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.13"
-typer = {extras = ["all"], version = "^0.15.2"}
-paradex_py = "^0.5.1"
-rich = "^14.0.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 paradex-cli = "paradex_cli.main:app"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.5"
-pytest-asyncio = "^0.26.0"
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -29,5 +32,5 @@ filterwarnings = [
 addopts = "-W ignore::RuntimeWarning"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
