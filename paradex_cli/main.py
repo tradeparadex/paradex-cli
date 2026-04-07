@@ -760,6 +760,7 @@ async def _sign_register_sub_operator_message(
     vault_address: str,
     sub_operator_address: str,
     env: str,
+    output_json: bool = False,
 ):
     """
     Build and sign the SNIP-12 typed data message required to register a sub-operator
@@ -830,9 +831,12 @@ async def _sign_register_sub_operator_message(
     )
 
     signature = paccount.starknet.sign_message(typed_data=message)
-    print(f"Nonce: {current_nonce}")
-    print(f"Expiry: {expiry_ms}")
-    print(f"Signature: {list(signature)}")
+    if output_json:
+        print(json.dumps({"nonce": current_nonce, "expiry": expiry_ms, "signature": list(signature)}))
+    else:
+        print(f"Nonce: {current_nonce}")
+        print(f"Expiry: {expiry_ms}")
+        print(f"Signature: {list(signature)}")
 
 
 @app.command()
@@ -840,6 +844,7 @@ def sign_register_sub_operator_message(
     vault_address: str = typer.Argument(..., help="Vault contract address"),
     sub_operator_address: str = typer.Argument(..., help="Sub-operator address to register"),
     env: str = option_env,
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """
     Generate a signature for registering a sub-operator to a vault.
@@ -854,7 +859,7 @@ def sign_register_sub_operator_message(
     these values with the vault operator to complete the registration.
     """
     asyncio.run(
-        _sign_register_sub_operator_message(vault_address, sub_operator_address, env)
+        _sign_register_sub_operator_message(vault_address, sub_operator_address, env, json_output)
     )
 
 
