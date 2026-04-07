@@ -262,7 +262,7 @@ def test_check_env_vars_missing():
     ):
         result = runner.invoke(app, ["add-guardian-backup", "0x789", "--env", "testnet"])
         assert result.exit_code == 1
-        assert "Missing required environment variables" in result.stdout
+        assert "Missing required environment variables" in result.output
 
 
 def test_print_account_info_command(setup_env_vars):

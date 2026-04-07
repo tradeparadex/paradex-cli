@@ -25,6 +25,7 @@ from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call
 from starknet_py.hash.selector import get_selector_from_name
 from starknet_py.utils.typed_data import TypedData
+from dotenv import load_dotenv
 
 
 app = typer.Typer(
@@ -47,10 +48,18 @@ option_env = typer.Option("testnet", help="local, nightly, staging, testnet, pro
 
 
 @app.callback()
-def check_env_vars():
+def check_env_vars(
+    env_file: Optional[str] = typer.Option(None, "--env-file", help="Path to a .env file with credentials"),
+):
     """
     Check if required environment variables are set.
     """
+    if env_file:
+        load_dotenv(env_file, override=True)
+        global ACCOUNT_ADDRESS, ACCOUNT_KEY
+        ACCOUNT_ADDRESS = os.environ.get("PARADEX_ACCOUNT_ADDRESS")
+        ACCOUNT_KEY = os.environ.get("PARADEX_ACCOUNT_KEY")
+
     required_vars = ["PARADEX_ACCOUNT_ADDRESS", "PARADEX_ACCOUNT_KEY"]
     missing_vars = [var for var in required_vars if var not in os.environ]
 
@@ -60,6 +69,7 @@ def check_env_vars():
 
 
 # Accounts for Private StarkNet
+load_dotenv()  # no-op if no .env present; populates os.environ before reading below
 ACCOUNT_ADDRESS = os.environ.get("PARADEX_ACCOUNT_ADDRESS")
 ACCOUNT_KEY = os.environ.get("PARADEX_ACCOUNT_KEY")
 

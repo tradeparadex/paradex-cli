@@ -14,30 +14,34 @@ You can install the package via pip:
 pip install paradex_cli
 ```
 
-Or using Poetry:
-
-```sh
-poetry add paradex_cli
-```
 
 ## Environment Variables
 
-All commands require the following environment variables:
+All commands require `PARADEX_ACCOUNT_ADDRESS` and `PARADEX_ACCOUNT_KEY`.
 
-| Variable | Description |
-|---|---|
-| `PARADEX_ACCOUNT_ADDRESS` | Your Paradex L2 account address |
-| `PARADEX_ACCOUNT_KEY` | Your Paradex L2 account private key |
+**Option 1 — `.env` file (recommended)**
 
-You can pass them inline:
+Copy the example and fill in your credentials. The CLI auto-loads `.env` from the current directory.
+
+```sh
+cp .env.example .env
+# edit .env with your address and private key
+paradex-cli <command>
+```
+
+**Option 2 — explicit file path**
+
+Useful when you maintain separate credential files per environment:
+
+```sh
+paradex-cli --env-file ~/.paradex/prod.env <command>
+```
+
+**Option 3 — inline / shell export**
 
 ```sh
 PARADEX_ACCOUNT_ADDRESS=0x... PARADEX_ACCOUNT_KEY=0x... paradex-cli <command>
-```
-
-Or export them in your shell session (or `.env` file):
-
-```sh
+# or
 export PARADEX_ACCOUNT_ADDRESS=0x...
 export PARADEX_ACCOUNT_KEY=0x...
 ```
@@ -114,18 +118,14 @@ cd paradex_cli
 
 ### 2. Install Dependencies
 
-Install the dependencies using Poetry:
-
 ```sh
-poetry install
+uv sync
 ```
 
 ### 3. Run Tests
 
-Ensure everything is working by running the tests:
-
 ```sh
-poetry run pytest
+uv run pytest
 ```
 
 ### 4. Make Your Changes
@@ -138,10 +138,8 @@ Add tests for your new features or bug fixes.
 
 ### 6. Run Tests Again
 
-Run the tests again to make sure everything is still working:
-
 ```sh
-poetry run pytest
+uv run pytest
 ```
 
 ### 7. Commit Your Changes
@@ -160,22 +158,12 @@ Create a pull request against the `main` branch of this repository.
 
 ## Building the Project
 
-To build the project, run:
-
 ```sh
-poetry build
+uv build
 ```
 
 ## Publishing the Project
 
-To publish the project to PyPI, run:
-
 ```sh
-poetry publish --build
-```
-
-Make sure you have configured your PyPI token:
-
-```sh
-poetry config pypi-token.pypi <your-token>
+UV_PUBLISH_TOKEN=<your-pypi-token> uv publish
 ```
