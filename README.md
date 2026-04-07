@@ -8,12 +8,18 @@ including printing account info, adding guardians, changing signers, and more.
 
 ## Installation
 
-You can install the package via pip:
+**Run without installing (recommended):**
 
 ```sh
-pip install paradex_cli
+uvx paradex-cli <command>
 ```
 
+**Install as a persistent tool:**
+
+```sh
+uv tool install paradex-cli
+paradex-cli <command>
+```
 
 ## Environment Variables
 
