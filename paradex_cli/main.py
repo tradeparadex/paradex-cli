@@ -24,7 +24,6 @@ from starknet_py.constants import RPC_CONTRACT_ERROR
 from starknet_py.net.client_errors import ClientError
 from starknet_py.net.client_models import Call
 from starknet_py.hash.selector import get_selector_from_name
-from starknet_py.utils.typed_data import TypedData
 from dotenv import load_dotenv
 
 
@@ -798,37 +797,35 @@ async def _sign_register_sub_operator_message(
     expiry_ms = int(time.time() * 1000) + 1000 * 60 * 60 * 24  # 24 hours from now
     chain_id = pclient.config.starknet_chain_id  # hex string, e.g. "0x505249564154..."
 
-    message = TypedData.from_dict(
-        {
-            "types": {
-                "StarknetDomain": [
-                    {"name": "name", "type": "shortstring"},
-                    {"name": "version", "type": "shortstring"},
-                    {"name": "chainId", "type": "shortstring"},
-                    {"name": "revision", "type": "shortstring"},
-                ],
-                "SubOperatorRegistrationMessage": [
-                    {"name": "vault", "type": "ContractAddress"},
-                    {"name": "sub_operator", "type": "ContractAddress"},
-                    {"name": "nonce", "type": "felt"},
-                    {"name": "expiry", "type": "timestamp"},
-                ],
-            },
-            "primaryType": "SubOperatorRegistrationMessage",
-            "domain": {
-                "name": "Paradex",
-                "version": "v1",
-                "chainId": chain_id,
-                "revision": 1,
-            },
-            "message": {
-                "vault": vault_address,
-                "sub_operator": sub_operator_address,
-                "nonce": current_nonce,
-                "expiry": expiry_ms,
-            },
-        }
-    )
+    message = {
+        "types": {
+            "StarknetDomain": [
+                {"name": "name", "type": "shortstring"},
+                {"name": "version", "type": "shortstring"},
+                {"name": "chainId", "type": "shortstring"},
+                {"name": "revision", "type": "shortstring"},
+            ],
+            "SubOperatorRegistrationMessage": [
+                {"name": "vault", "type": "ContractAddress"},
+                {"name": "sub_operator", "type": "ContractAddress"},
+                {"name": "nonce", "type": "felt"},
+                {"name": "expiry", "type": "timestamp"},
+            ],
+        },
+        "primaryType": "SubOperatorRegistrationMessage",
+        "domain": {
+            "name": "Paradex",
+            "version": "v1",
+            "chainId": chain_id,
+            "revision": 1,
+        },
+        "message": {
+            "vault": vault_address,
+            "sub_operator": sub_operator_address,
+            "nonce": current_nonce,
+            "expiry": expiry_ms,
+        },
+    }
 
     signature = paccount.starknet.sign_message(typed_data=message)
     if output_json:
