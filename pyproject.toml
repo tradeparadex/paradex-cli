@@ -1,6 +1,6 @@
 [project]
 name = "paradex-cli"
-version = "0.1.5"
+version = "0.2.0"
 description = "CLI for interacting with Paradex API and Paraclear smart contracts"
 authors = [{name = "Paradex Team", email = "support@paradex.trade"}]
 license = {text = "MIT"}

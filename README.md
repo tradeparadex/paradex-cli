@@ -57,43 +57,73 @@ export PARADEX_ACCOUNT_KEY=0x...
 ### Print Account Info
 
 ```sh
-paradex_cli print-account-info ACCOUNT_ADDRESS --env ENVIRONMENT
+paradex-cli print-account-info ACCOUNT_ADDRESS --env ENVIRONMENT
 ```
 
 ### Add Guardian
 
 ```sh
-paradex_cli add-guardian PUB_KEY --env ENVIRONMENT
+paradex-cli add-guardian PUB_KEY --env ENVIRONMENT
 ```
 
 ### Add Guardian Backup
 
 ```sh
-paradex_cli add-guardian-backup PUB_KEY --env ENVIRONMENT
+paradex-cli add-guardian-backup PUB_KEY --env ENVIRONMENT
 ```
 
 ### Change Signer
 
 ```sh
-paradex_cli change-signer PUB_KEY --env ENVIRONMENT
+paradex-cli change-signer PUB_KEY --env ENVIRONMENT
 ```
 
 ### Sign Invoke Transaction
 
 ```sh
-paradex_cli sign-invoke-tx FILE_PATH --env ENVIRONMENT
+paradex-cli sign-invoke-tx FILE_PATH --env ENVIRONMENT
 ```
 
 ### Submit Invoke Transaction
 
 ```sh
-paradex_cli submit-invoke-tx TX_FILE_PATH SIG_FILES --env ENVIRONMENT
+paradex-cli submit-invoke-tx TX_FILE_PATH SIG_FILES --env ENVIRONMENT
+```
+
+### Withdraw to L1
+
+Withdraw balance from Paraclear to bridge on L1.
+
+```sh
+paradex-cli withdraw-to-l1 L1_ADDRESS AMOUNT --env ENVIRONMENT
+```
+
+### Transfer on L2
+
+Withdraw balance from Paraclear and transfer to a different account on L2.
+
+```sh
+paradex-cli transfer-on-l2 L2_ADDRESS AMOUNT --env ENVIRONMENT
+```
+
+### Deposit to Paraclear
+
+Deposit balance to Paraclear from L2.
+
+```sh
+paradex-cli deposit-to-paraclear AMOUNT --env ENVIRONMENT
 ```
 
 ### Trigger Escape Guardian
 
+```sh
+paradex-cli trigger-escape-guardian --env ENVIRONMENT
 ```
-paradex_cli trigger-escape-guardian --env ENVIRONMENT
+
+### Escape Guardian
+
+```sh
+paradex-cli escape-guardian PUB_KEY --env ENVIRONMENT
 ```
 
 ### Sign Register Sub-Operator Message
