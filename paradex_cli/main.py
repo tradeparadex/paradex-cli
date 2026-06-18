@@ -46,7 +46,25 @@ from paradex_cli.subkeys import (
 )
 
 
+class _CleanErrorGroup(typer.core.TyperGroup):
+    """Surface expected runtime failures as a concise message instead of a
+    Python traceback. On-chain reverts (``ClientError``) and client-side
+    validation (``ValueError``) are user-facing errors, not bugs — print them
+    cleanly and exit non-zero."""
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except ClientError as err:
+            typer.secho(f"Error: {err.message}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        except ValueError as err:
+            typer.secho(f"Error: {err}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+
+
 app = typer.Typer(
+    cls=_CleanErrorGroup,
     help="""Manage account contract setup.
 
     Supports both Cairo 0 (Argent v0.2.x/v0.3.x proxy) and Cairo 1

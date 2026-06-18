@@ -391,6 +391,51 @@ def test_check_env_vars_missing():
         assert "Missing required environment variables" in result.output
 
 
+def test_command_prints_clean_message_on_client_error(setup_env_vars):
+    """On-chain failures (ClientError) must surface as a concise stderr message
+    and a non-zero exit — not a raw Python traceback."""
+    from starknet_py.net.client_errors import ClientError
+
+    mock_account_obj = MagicMock()
+    mock_account_obj.l2_address = 0x123
+
+    def boom(*_a, **_k):
+        raise ClientError(code=41, message="Transaction execution error.")
+
+    with (
+        patch("paradex_cli.main.ParadexAccount", return_value=mock_account_obj),
+        patch("paradex_cli.main.asyncio.run", side_effect=mock_asyncio_run),
+        patch("paradex_cli.main.load_contract_from_account", new_callable=AsyncMock, side_effect=boom),
+    ):
+        result = runner.invoke(app, ["add-guardian", "0x789", "--env", "testnet"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Error" in result.output
+    assert "Transaction execution error" in result.output
+
+
+def test_command_prints_clean_message_on_value_error(setup_env_vars):
+    """Client-side validation failures (ValueError) must also surface cleanly
+    (e.g. guardian-backup attempted on a v0.5.0 multiowner account)."""
+    mock_account_obj = MagicMock()
+    mock_account_obj.l2_address = 0x123
+
+    def boom(*_a, **_k):
+        raise ValueError("guardian-backup is not supported on Argent v0.5.0 multiowner accounts")
+
+    with (
+        patch("paradex_cli.main.ParadexAccount", return_value=mock_account_obj),
+        patch("paradex_cli.main.asyncio.run", side_effect=mock_asyncio_run),
+        patch("paradex_cli.main.load_contract_from_account", new_callable=AsyncMock, side_effect=boom),
+    ):
+        result = runner.invoke(app, ["add-guardian-backup", "0x789", "--env", "testnet"])
+
+    assert result.exit_code != 0
+    assert "Error" in result.output
+    assert "not supported" in result.output
+
+
 def test_print_account_info_command(setup_env_vars):
     with (
         patch("paradex_cli.main.ParadexAccount") as mock_account,
