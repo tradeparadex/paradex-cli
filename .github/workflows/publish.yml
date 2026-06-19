@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      # Required for PyPI trusted publishing (OIDC) — no API token needed.
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout code
@@ -34,7 +39,5 @@ jobs:
       - name: Build package
         run: uv build
 
-      - name: Publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Publish to PyPI (trusted publishing via OIDC)
         run: uv publish
