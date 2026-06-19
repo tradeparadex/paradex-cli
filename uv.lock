@@ -1087,7 +1087,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "paradex-py", specifier = ">=0.6.1" },
+    { name = "paradex-py", specifier = ">=0.6.2" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "siwe", specifier = ">=4.4.0" },
@@ -1102,7 +1102,7 @@ dev = [
 
 [[package]]
 name = "paradex-py"
-version = "0.6.1"
+version = "0.6.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eth-account" },
@@ -1117,9 +1117,9 @@ dependencies = [
     { name = "starknet-py" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/53/1e/cf60cb152f01175995cff803920cfbceaa908f2c59063de6399800d9eb49/paradex_py-0.6.1.tar.gz", hash = "sha256:1333bb10fc3d91a426d8dea45a218e04df3778d5cfb424a095303a3495387c2c", size = 416957, upload-time = "2026-05-21T08:58:40.447Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/cb/d4931d7089c104b664b8ea5b28539be2fffae0dcf6a9c2c908d170bd4473/paradex_py-0.6.2.tar.gz", hash = "sha256:eeed37f191454dac3a3dd8f345e5ab8178e927eb7c563abb63cd623e3774c9f9", size = 420294, upload-time = "2026-06-19T09:14:10.896Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/4e/0ef7f0aff18a2ab0fecb666c96111f807957d5c608c2a6b6d81c4f7a9205/paradex_py-0.6.1-py3-none-any.whl", hash = "sha256:a24fc7dd10b1230ad48bab7c5262e117aefd30839a903ff4eee8b3ef19de9b74", size = 138556, upload-time = "2026-05-21T08:58:38.96Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/9f/ff8908a210e48a48835839c151d86c6e354c9902467ed41a304a1a9a75d4/paradex_py-0.6.2-py3-none-any.whl", hash = "sha256:66ce1d5492be0566ad2858e229843bf7b2bb2f66370de459f9653874d380093c", size = 141429, upload-time = "2026-06-19T09:14:09.692Z" },
 ]
 
 [[package]]
