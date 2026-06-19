@@ -1,6 +1,5 @@
 import asyncio
 import os
-import sys
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch, ANY
 
@@ -20,6 +19,7 @@ from paradex_cli import (
     load_contract_from_account,
 )
 from typer.testing import CliRunner
+from starknet_py.hash.selector import get_selector_from_name
 
 runner = CliRunner()
 
@@ -84,58 +84,130 @@ async def test_load_contract_from_account(mock_account):
         assert contract == mock_contract
 
 
-@pytest.mark.asyncio
-async def test_change_guardian(mock_account, setup_env_vars):
+def _cairo0_contract():
+    """A Cairo 0 Argent account mock: camelCase getters present."""
     mock_contract = AsyncMock()
+    mock_contract.address = 0x123
     mock_contract.functions = {
         "changeGuardian": MagicMock(prepare_invoke_v3=AsyncMock()),
+        "changeGuardianBackup": MagicMock(prepare_invoke_v3=AsyncMock()),
         "getSigner": MagicMock(call=AsyncMock(return_value=MagicMock(signer=0x1))),
         "getGuardian": MagicMock(call=AsyncMock(return_value=MagicMock(guardian=0x2))),
         "getGuardianBackup": MagicMock(call=AsyncMock(return_value=MagicMock(guardianBackup=0x3))),
     }
+    return mock_contract
+
+
+@pytest.mark.asyncio
+async def test_load_contract_falls_back_on_proxy_resolution_error(mock_account):
+    """Cairo 1 (EVM) accounts aren't proxies; proxy resolution must fall back
+    to direct ABI loading instead of raising."""
+    from starknet_py.proxy.contract_abi_resolver import ProxyResolutionError
+
+    mock_contract = AsyncMock()
+    with patch(
+        "paradex_cli.main.Contract.from_address",
+        new_callable=AsyncMock,
+        side_effect=[ProxyResolutionError(proxy_checks=[]), mock_contract],
+    ) as mock_from_address:
+        contract = await load_contract_from_account("0x123", mock_account)
+        assert contract == mock_contract
+        # Second (fallback) call must disable proxy resolution.
+        assert mock_from_address.call_count == 2
+        assert mock_from_address.call_args.kwargs["proxy_config"] is False
+
+
+@pytest.mark.asyncio
+async def test_change_guardian_cairo0(mock_account, setup_env_vars):
+    mock_contract = _cairo0_contract()
     mock_pub_key = "0x789"
     with (
         patch("paradex_cli.main.load_contract_from_account", return_value=mock_contract),
         patch("paradex_cli.main._process_invoke", new_callable=AsyncMock),
     ):
         await _change_guardian(mock_account.starknet, mock_contract, mock_pub_key)
-        mock_contract.functions["changeGuardian"].prepare_invoke_v3.assert_called_once()
+        # Cairo 0 path: a Call to changeGuardian(felt) is prepared and signed.
+        mock_account.starknet.prepare_invoke.assert_called_once()
+        call = mock_account.starknet.prepare_invoke.call_args.kwargs["calls"]
+        assert call.selector == get_selector_from_name("changeGuardian")
+        assert call.calldata == [0x789]
 
 
 @pytest.mark.asyncio
-async def test_change_guardian_backup(mock_account, setup_env_vars):
+async def test_change_guardian_cairo1(mock_account, setup_env_vars):
+    # Cairo 1 account: snake_case getters present.
     mock_contract = AsyncMock()
+    mock_contract.address = 0x123
     mock_contract.functions = {
-        "changeGuardianBackup": MagicMock(prepare_invoke_v3=AsyncMock()),
-        "getSigner": MagicMock(call=AsyncMock(return_value=MagicMock(signer=0x1))),
-        "getGuardian": MagicMock(call=AsyncMock(return_value=MagicMock(guardian=0x2))),
-        "getGuardianBackup": MagicMock(call=AsyncMock(return_value=MagicMock(guardianBackup=0x3))),
+        "get_owner": MagicMock(call=AsyncMock(return_value=[0x1])),
+        "get_guardian": MagicMock(call=AsyncMock(return_value=[0x0])),
+        "get_guardian_backup": MagicMock(call=AsyncMock(return_value=[0x0])),
     }
-    mock_pub_key = "0x789"
     with (
         patch("paradex_cli.main.load_contract_from_account", return_value=mock_contract),
         patch("paradex_cli.main._process_invoke", new_callable=AsyncMock),
     ):
-        await _change_guardian_backup(mock_account.starknet, mock_contract, mock_pub_key)
-        mock_contract.functions["changeGuardianBackup"].prepare_invoke_v3.assert_called_once()
+        await _change_guardian(mock_account.starknet, mock_contract, "0x789")
+        call = mock_account.starknet.prepare_invoke.call_args.kwargs["calls"]
+        assert call.selector == get_selector_from_name("change_guardian")
+        # Some(Signer::Starknet(0x789))
+        assert call.calldata == [0, 0, 0x789]
 
 
 @pytest.mark.asyncio
-async def test_change_signer(mock_account, setup_env_vars):
-    mock_contract = AsyncMock()
-    mock_contract.functions = {
-        "changeGuardian": MagicMock(prepare_invoke_v3=AsyncMock()),
-        "getSigner": MagicMock(call=AsyncMock(return_value=MagicMock(signer=0x1))),
-        "getGuardian": MagicMock(call=AsyncMock(return_value=MagicMock(guardian=0x2))),
-        "getGuardianBackup": MagicMock(call=AsyncMock(return_value=MagicMock(guardianBackup=0x3))),
-    }
-    mock_pub_key = "0x789"
+async def test_change_guardian_backup_cairo0(mock_account, setup_env_vars):
+    mock_contract = _cairo0_contract()
     with (
         patch("paradex_cli.main.load_contract_from_account", return_value=mock_contract),
         patch("paradex_cli.main._process_invoke", new_callable=AsyncMock),
     ):
-        await _change_signer(mock_account.starknet, mock_contract, mock_pub_key)
+        await _change_guardian_backup(mock_account.starknet, mock_contract, "0x789")
+        call = mock_account.starknet.prepare_invoke.call_args.kwargs["calls"]
+        assert call.selector == get_selector_from_name("changeGuardianBackup")
+        assert call.calldata == [0x789]
+
+
+@pytest.mark.asyncio
+async def test_change_guardian_backup_cairo1(mock_account, setup_env_vars):
+    mock_contract = AsyncMock()
+    mock_contract.address = 0x123
+    mock_contract.data.cairo_version = 1
+    mock_contract.functions = {
+        "get_owner": MagicMock(call=AsyncMock(return_value=[0x1])),
+        "get_guardian": MagicMock(call=AsyncMock(return_value=[0x0])),
+        "get_guardian_backup": MagicMock(call=AsyncMock(return_value=[0x0])),
+    }
+    with (
+        patch("paradex_cli.main.load_contract_from_account", return_value=mock_contract),
+        patch("paradex_cli.main._process_invoke", new_callable=AsyncMock),
+    ):
+        await _change_guardian_backup(mock_account.starknet, mock_contract, "0x789")
+        call = mock_account.starknet.prepare_invoke.call_args.kwargs["calls"]
+        assert call.selector == get_selector_from_name("change_guardian_backup")
+        # Some(Signer::Starknet(0x789))
+        assert call.calldata == [0, 0, 0x789]
+
+
+@pytest.mark.asyncio
+async def test_change_signer_cairo0(mock_account, setup_env_vars):
+    mock_contract = _cairo0_contract()
+    with (
+        patch("paradex_cli.main.load_contract_from_account", return_value=mock_contract),
+        patch("paradex_cli.main._process_invoke", new_callable=AsyncMock),
+    ):
+        await _change_signer(mock_account.starknet, mock_contract, "0x789")
         mock_contract.functions["changeGuardian"].prepare_invoke_v3.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_change_signer_cairo1_rejected(mock_account, setup_env_vars):
+    import typer
+
+    mock_contract = AsyncMock()
+    mock_contract.address = 0x123
+    mock_contract.functions = {"get_owner": MagicMock(call=AsyncMock(return_value=[0x1]))}
+    with pytest.raises(typer.BadParameter):
+        await _change_signer(mock_account.starknet, mock_contract, "0x789")
 
 
 @pytest.mark.asyncio
@@ -173,12 +245,15 @@ async def test_submit_invoke_tx(mock_account, setup_env_vars):
 
 
 @pytest.mark.asyncio
-async def test_withdraw_to_l1(mock_account, setup_env_vars):
+async def test_withdraw_to_l1_legacy_bridge(mock_account, setup_env_vars):
+    # Legacy (v1) single-token bridge on a Cairo 0 account: initiate_withdraw.
     mock_contract = AsyncMock()
+    mock_contract.address = 0x123
+    mock_contract.data.cairo_version = 0  # account is cairo0 -> getSigner path
     mock_contract.functions = {
         "withdraw": MagicMock(prepare_invoke_v3=AsyncMock()),
         "initiate_withdraw": MagicMock(prepare_invoke_v3=AsyncMock()),
-        "get_version": MagicMock(call=AsyncMock(return_value=MagicMock(version=1))),
+        "get_version": MagicMock(call=AsyncMock(return_value=(1,))),  # bridge version 1
         "get_token_asset_balance": MagicMock(call=AsyncMock(return_value=MagicMock(balance=1000))),
         "getSigner": MagicMock(call=AsyncMock(return_value=MagicMock(signer=0x1))),
         "getGuardian": MagicMock(call=AsyncMock(return_value=MagicMock(guardian=0x2))),
@@ -191,6 +266,31 @@ async def test_withdraw_to_l1(mock_account, setup_env_vars):
         await _withdraw_to_l1(mock_account, "0x123", Decimal("10.0"))
         mock_contract.functions["withdraw"].prepare_invoke_v3.assert_called_once()
         mock_contract.functions["initiate_withdraw"].prepare_invoke_v3.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_withdraw_to_l1_v2_bridge(mock_account, setup_env_vars):
+    # StarkGate v2 bridge: initiate_token_withdraw(l1_token, l1_recipient, amount).
+    mock_account.config.bridged_tokens[0].l1_token_address = "0xL1USDC".replace("L1USDC", "29a8")
+    mock_contract = AsyncMock()
+    mock_contract.address = 0x123
+    mock_contract.data.cairo_version = 0
+    mock_contract.functions = {
+        "withdraw": MagicMock(prepare_invoke_v3=AsyncMock()),
+        "initiate_token_withdraw": MagicMock(prepare_invoke_v3=AsyncMock()),
+        "get_version": MagicMock(call=AsyncMock(return_value=(2,))),  # bridge version 2
+        "get_token_asset_balance": MagicMock(call=AsyncMock(return_value=MagicMock(balance=1000))),
+        "getSigner": MagicMock(call=AsyncMock(return_value=MagicMock(signer=0x1))),
+        "getGuardian": MagicMock(call=AsyncMock(return_value=MagicMock(guardian=0x0))),
+        "getGuardianBackup": MagicMock(call=AsyncMock(return_value=MagicMock(guardianBackup=0x0))),
+    }
+    with (
+        patch("paradex_cli.main.load_contract_from_account", return_value=mock_contract),
+        patch("paradex_cli.main._process_invoke", new_callable=AsyncMock),
+    ):
+        await _withdraw_to_l1(mock_account, "0x456", Decimal("10.0"))
+        mock_contract.functions["withdraw"].prepare_invoke_v3.assert_called_once()
+        mock_contract.functions["initiate_token_withdraw"].prepare_invoke_v3.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -236,22 +336,48 @@ async def test_deposit_to_paraclear(mock_account, setup_env_vars):
 
 
 @pytest.mark.asyncio
-async def test_escape_guardian_logic():
+async def test_escape_guardian_logic_cairo0():
     mock_contract = AsyncMock()
+    mock_contract.address = 0x123
     mock_contract.functions = {
-        "escapeGuardian": MagicMock(prepare_invoke_v3=MagicMock(return_value="prepared_call"))
+        "getSigner": MagicMock(call=AsyncMock(return_value=MagicMock(signer=0x1))),
+        "getGuardian": MagicMock(call=AsyncMock(return_value=MagicMock(guardian=0x2))),
+        "getGuardianBackup": MagicMock(call=AsyncMock(return_value=MagicMock(guardianBackup=0x3))),
     }
 
     mock_account = MagicMock()
     mock_account.prepare_invoke = AsyncMock(return_value="prepared_invoke")
 
-    with patch("paradex_cli.main._check_multisig_required", return_value=False), \
-         patch("paradex_cli.main._process_invoke", new_callable=AsyncMock) as mock_process:
-        
+    with patch("paradex_cli.main._process_invoke", new_callable=AsyncMock) as mock_process:
         await _escape_guardian(mock_account, mock_contract, "0xABC")
-        
-        mock_contract.functions["escapeGuardian"].prepare_invoke_v3.assert_called_once()
-        mock_account.prepare_invoke.assert_called_once_with(calls="prepared_call", auto_estimate=True)
+
+        call = mock_account.prepare_invoke.call_args.kwargs["calls"]
+        # Cairo 0 escapeGuardian(felt) carries the new guardian.
+        assert call.selector == get_selector_from_name("escapeGuardian")
+        assert call.calldata == [0xABC]
+        mock_process.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_escape_guardian_logic_cairo1():
+    mock_contract = AsyncMock()
+    mock_contract.address = 0x123
+    mock_contract.functions = {
+        "get_owner": MagicMock(call=AsyncMock(return_value=[0x1])),
+        "get_guardian": MagicMock(call=AsyncMock(return_value=[0x2])),
+        "get_guardian_backup": MagicMock(call=AsyncMock(return_value=[0x0])),
+    }
+
+    mock_account = MagicMock()
+    mock_account.prepare_invoke = AsyncMock(return_value="prepared_invoke")
+
+    with patch("paradex_cli.main._process_invoke", new_callable=AsyncMock) as mock_process:
+        await _escape_guardian(mock_account, mock_contract, "0xABC")
+
+        call = mock_account.prepare_invoke.call_args.kwargs["calls"]
+        # Cairo 1 escape_guardian() takes no argument.
+        assert call.selector == get_selector_from_name("escape_guardian")
+        assert call.calldata == []
         mock_process.assert_called_once()
 
 
@@ -263,6 +389,51 @@ def test_check_env_vars_missing():
         result = runner.invoke(app, ["add-guardian-backup", "0x789", "--env", "testnet"])
         assert result.exit_code == 1
         assert "Missing required environment variables" in result.output
+
+
+def test_command_prints_clean_message_on_client_error(setup_env_vars):
+    """On-chain failures (ClientError) must surface as a concise stderr message
+    and a non-zero exit — not a raw Python traceback."""
+    from starknet_py.net.client_errors import ClientError
+
+    mock_account_obj = MagicMock()
+    mock_account_obj.l2_address = 0x123
+
+    def boom(*_a, **_k):
+        raise ClientError(code=41, message="Transaction execution error.")
+
+    with (
+        patch("paradex_cli.main.ParadexAccount", return_value=mock_account_obj),
+        patch("paradex_cli.main.asyncio.run", side_effect=mock_asyncio_run),
+        patch("paradex_cli.main.load_contract_from_account", new_callable=AsyncMock, side_effect=boom),
+    ):
+        result = runner.invoke(app, ["add-guardian", "0x789", "--env", "testnet"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Error" in result.output
+    assert "Transaction execution error" in result.output
+
+
+def test_command_prints_clean_message_on_value_error(setup_env_vars):
+    """Client-side validation failures (ValueError) must also surface cleanly
+    (e.g. guardian-backup attempted on a v0.5.0 multiowner account)."""
+    mock_account_obj = MagicMock()
+    mock_account_obj.l2_address = 0x123
+
+    def boom(*_a, **_k):
+        raise ValueError("guardian-backup is not supported on Argent v0.5.0 multiowner accounts")
+
+    with (
+        patch("paradex_cli.main.ParadexAccount", return_value=mock_account_obj),
+        patch("paradex_cli.main.asyncio.run", side_effect=mock_asyncio_run),
+        patch("paradex_cli.main.load_contract_from_account", new_callable=AsyncMock, side_effect=boom),
+    ):
+        result = runner.invoke(app, ["add-guardian-backup", "0x789", "--env", "testnet"])
+
+    assert result.exit_code != 0
+    assert "Error" in result.output
+    assert "not supported" in result.output
 
 
 def test_print_account_info_command(setup_env_vars):
