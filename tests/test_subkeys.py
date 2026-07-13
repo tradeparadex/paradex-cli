@@ -370,6 +370,19 @@ def test_register_subkey_command_vault_operator(setup_env_vars):
     assert args[-1] == "0xoperator"
 
 
+def _plain_cli_output(output: str) -> str:
+    """Strip ANSI escapes and rich box-drawing, collapse whitespace.
+
+    Depending on the installed rich/typer versions, usage errors render either
+    as plain text or inside an ANSI-colored panel with line wrapping — assert
+    on normalized text so the test passes under both."""
+    import re
+
+    no_ansi = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    no_box = re.sub(r"[│╭╮╰╯─]", " ", no_ansi)
+    return " ".join(no_box.split())
+
+
 def test_vault_operator_address_requires_l1_key(setup_env_vars):
     result = runner.invoke(
         app,
@@ -385,7 +398,7 @@ def test_vault_operator_address_requires_l1_key(setup_env_vars):
         ],
     )
     assert result.exit_code != 0
-    assert "requires --l1-key" in result.output
+    assert "requires --l1-key" in _plain_cli_output(result.output)
 
 
 def test_list_subkeys_command(setup_env_vars):
