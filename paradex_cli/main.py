@@ -1007,13 +1007,22 @@ def _authed_paradex(env: str) -> Paradex:
 
 
 def _evm_authed_paradex(
-    env: str, l1_key: str, siwe_domain: str | None, chain_id: int | None
+    env: str,
+    l1_key: str,
+    siwe_domain: str | None,
+    chain_id: int | None,
+    vault_operator_address: str | None = None,
 ) -> Paradex:
     """Return a Paradex client authenticated as an EVM (EIP-191) account.
 
     The SDK only implements the v1 stark onboarding/auth flow, so we run the
     v2 SIWE onboarding+auth ourselves and inject the resulting JWT into the
     api_client (set_token sets the Authorization header used by all calls).
+
+    ``vault_operator_address`` authenticates *as* that EVM vault operator
+    sub-account (owner key signs, operator is the target): the JWT's subject is
+    the operator, so subkey operations in this session act on the operator's
+    subkeys — the way API traders trade an EVM-owned vault.
     """
     if siwe_domain is None or chain_id is None:
         d, c = evm_siwe_defaults(env)
@@ -1033,7 +1042,10 @@ def _evm_authed_paradex(
         base = root_url if path.startswith("v2/") else v1_url
         return ac.post(api_url=base, path=path, payload=json_body, headers=headers)
 
-    _, jwt = evm_onboard_and_auth(http_post, http_get, l1_key, siwe_domain, chain_id)
+    _, jwt = evm_onboard_and_auth(
+        http_post, http_get, l1_key, siwe_domain, chain_id,
+        target_address=vault_operator_address,
+    )
     ac.set_token(jwt)
     return pclient
 
@@ -1113,11 +1125,14 @@ def _register_subkey(
     l1_key: str | None = None,
     siwe_domain: str | None = None,
     chain_id: int | None = None,
+    vault_operator_address: str | None = None,
 ) -> dict:
     # EVM accounts authenticate via the v2 SIWE flow; stark accounts via the
     # SDK's v1 flow. The authorization signature in the payload matches.
+    if vault_operator_address and not l1_key:
+        raise typer.BadParameter("--vault-operator-address requires --l1-key")
     if l1_key:
-        pclient = _evm_authed_paradex(env, l1_key, siwe_domain, chain_id)
+        pclient = _evm_authed_paradex(env, l1_key, siwe_domain, chain_id, vault_operator_address)
     else:
         pclient = _authed_paradex(env)
     payload = _register_payload_for(
@@ -1154,6 +1169,14 @@ def register_subkey(
     chain_id: int = typer.Option(
         None, "--chain-id", help="Override the EIP-155 chain id (default: per-env)."
     ),
+    vault_operator_address: str = typer.Option(
+        None,
+        "--vault-operator-address",
+        help="EVM (EIP-191) accounts: register the subkey under this EVM vault "
+        "operator sub-account instead of the main account (requires --l1-key; "
+        "the operator address is the vault's operator_account). Subkeys "
+        "registered this way trade the vault.",
+    ),
     env: str = option_env,
 ):
     """
@@ -1165,21 +1188,31 @@ def register_subkey(
 
     For a StarkNet main account, use --sign to attach a stark-curve
     authorization. For an EVM (EIP-191) main account, pass --l1-key (or
-    PARADEX_L1_PRIVATE_KEY) to authorize via a SIWE personal_sign.
+    PARADEX_L1_PRIVATE_KEY) to authorize via a SIWE personal_sign; add
+    --vault-operator-address to register the subkey under an EVM vault
+    operator you own (for trading the vault via API).
     """
-    res = _register_subkey(public_key, name, env, sign, l1_key, siwe_domain, chain_id)
+    res = _register_subkey(
+        public_key, name, env, sign, l1_key, siwe_domain, chain_id, vault_operator_address
+    )
     print("Subkey registered:", public_key)
     if res:
         print(json.dumps(res, indent=2))
 
 
 def _subkey_client(
-    env: str, l1_key: str | None, siwe_domain: str | None, chain_id: int | None
+    env: str,
+    l1_key: str | None,
+    siwe_domain: str | None,
+    chain_id: int | None,
+    vault_operator_address: str | None = None,
 ) -> Paradex:
     """Authenticated client for subkey ops: EVM (v2 SIWE) when an L1 key is
     supplied, otherwise the StarkNet (v1) flow."""
+    if vault_operator_address and not l1_key:
+        raise typer.BadParameter("--vault-operator-address requires --l1-key")
     if l1_key:
-        return _evm_authed_paradex(env, l1_key, siwe_domain, chain_id)
+        return _evm_authed_paradex(env, l1_key, siwe_domain, chain_id, vault_operator_address)
     return _authed_paradex(env)
 
 
@@ -1190,10 +1223,18 @@ _l1_key_opt = typer.Option(
 )
 _siwe_domain_opt = typer.Option(None, "--siwe-domain", help="Override SIWE domain (default: per-env).")
 _chain_id_opt = typer.Option(None, "--chain-id", help="Override EIP-155 chain id (default: per-env).")
+_vault_operator_opt = typer.Option(
+    None,
+    "--vault-operator-address",
+    help="EVM (EIP-191) accounts: act on the subkeys of this EVM vault operator "
+    "sub-account instead of the main account (requires --l1-key).",
+)
 
 
-def _list_subkeys(env, with_revoked, l1_key=None, siwe_domain=None, chain_id=None) -> dict:
-    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id)
+def _list_subkeys(
+    env, with_revoked, l1_key=None, siwe_domain=None, chain_id=None, vault_operator_address=None
+) -> dict:
+    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id, vault_operator_address)
     params = {"with_revoked": "true"} if with_revoked else None
     return pclient.api_client.get(
         api_url=pclient.api_client.api_url, path=SUBKEYS_PATH, params=params
@@ -1208,15 +1249,18 @@ def list_subkeys(
     l1_key: str = _l1_key_opt,
     siwe_domain: str = _siwe_domain_opt,
     chain_id: int = _chain_id_opt,
+    vault_operator_address: str = _vault_operator_opt,
     env: str = option_env,
 ):
     """List all subkeys registered under the main account."""
-    res = _list_subkeys(env, with_revoked, l1_key, siwe_domain, chain_id)
+    res = _list_subkeys(env, with_revoked, l1_key, siwe_domain, chain_id, vault_operator_address)
     print(json.dumps(res, indent=2))
 
 
-def _get_subkey(public_key, env, l1_key=None, siwe_domain=None, chain_id=None) -> dict:
-    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id)
+def _get_subkey(
+    public_key, env, l1_key=None, siwe_domain=None, chain_id=None, vault_operator_address=None
+) -> dict:
+    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id, vault_operator_address)
     return pclient.api_client.get(
         api_url=pclient.api_client.api_url, path=f"{SUBKEYS_PATH}/{public_key}"
     )
@@ -1228,15 +1272,18 @@ def get_subkey(
     l1_key: str = _l1_key_opt,
     siwe_domain: str = _siwe_domain_opt,
     chain_id: int = _chain_id_opt,
+    vault_operator_address: str = _vault_operator_opt,
     env: str = option_env,
 ):
     """Fetch a single subkey by public key."""
-    res = _get_subkey(public_key, env, l1_key, siwe_domain, chain_id)
+    res = _get_subkey(public_key, env, l1_key, siwe_domain, chain_id, vault_operator_address)
     print(json.dumps(res, indent=2))
 
 
-def _revoke_subkey(public_key, env, l1_key=None, siwe_domain=None, chain_id=None) -> dict:
-    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id)
+def _revoke_subkey(
+    public_key, env, l1_key=None, siwe_domain=None, chain_id=None, vault_operator_address=None
+) -> dict:
+    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id, vault_operator_address)
     return pclient.api_client.delete(
         api_url=pclient.api_client.api_url, path=f"{SUBKEYS_PATH}/{public_key}"
     )
@@ -1248,21 +1295,23 @@ def revoke_subkey(
     l1_key: str = _l1_key_opt,
     siwe_domain: str = _siwe_domain_opt,
     chain_id: int = _chain_id_opt,
+    vault_operator_address: str = _vault_operator_opt,
     env: str = option_env,
 ):
     """
     Revoke a subkey. Subkeys can only be revoked using the main account.
     """
-    res = _revoke_subkey(public_key, env, l1_key, siwe_domain, chain_id)
+    res = _revoke_subkey(public_key, env, l1_key, siwe_domain, chain_id, vault_operator_address)
     print("Subkey revoked:", public_key)
     if res:
         print(json.dumps(res, indent=2))
 
 
 def _update_subkey_allowed_cidrs(
-    public_key, cidrs, env, l1_key=None, siwe_domain=None, chain_id=None
+    public_key, cidrs, env, l1_key=None, siwe_domain=None, chain_id=None,
+    vault_operator_address=None,
 ) -> dict:
-    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id)
+    pclient = _subkey_client(env, l1_key, siwe_domain, chain_id, vault_operator_address)
     return pclient.api_client.put(
         api_url=pclient.api_client.api_url,
         path=f"{SUBKEYS_PATH}/{public_key}/allowed-cidrs",
@@ -1283,13 +1332,16 @@ def update_subkey_allowed_cidrs(
     l1_key: str = _l1_key_opt,
     siwe_domain: str = _siwe_domain_opt,
     chain_id: int = _chain_id_opt,
+    vault_operator_address: str = _vault_operator_opt,
     env: str = option_env,
 ):
     """
     Replace the IP allowlist (CIDRs) for a subkey. The provided list fully
     replaces the previous one; an empty list makes the subkey unrestricted.
     """
-    res = _update_subkey_allowed_cidrs(public_key, cidr, env, l1_key, siwe_domain, chain_id)
+    res = _update_subkey_allowed_cidrs(
+        public_key, cidr, env, l1_key, siwe_domain, chain_id, vault_operator_address
+    )
     print("Updated allowed CIDRs for subkey:", public_key)
     if res:
         print(json.dumps(res, indent=2))

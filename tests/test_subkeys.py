@@ -207,6 +207,39 @@ def test_evm_onboard_and_auth_skips_onboarding_when_exists():
     assert posts == ["v2/auth"]
 
 
+def test_evm_onboard_and_auth_targets_vault_operator():
+    """target_address authenticates AS the operator: no GET /onboarding, no
+    onboarding POST (operators are onboarded by vault creation), and the SIWE
+    auth headers name the operator while the signature stays the owner key's."""
+    posts = []
+
+    def http_get(path, params):
+        raise AssertionError("GET /onboarding must not be called for an operator target")
+
+    def http_post(path, headers, json_body):
+        posts.append((path, headers))
+        assert path == "v2/auth", "only auth may be posted for an operator target"
+        return {"jwt_token": "OPJWT"}
+
+    addr, jwt = evm_onboard_and_auth(
+        http_post,
+        http_get,
+        EVM_KEY,
+        "app.testnet.paradex.trade",
+        11155111,
+        target_address="0xoperator",
+    )
+    assert addr == "0xoperator"
+    assert jwt == "OPJWT"
+    _, headers = posts[0]
+    assert headers["PARADEX-STARKNET-ACCOUNT"] == "0xoperator"
+    # SIWE message is still signed by (and names) the owner's eth address.
+    import base64 as _b64
+
+    siwe = _b64.b64decode(headers["PARADEX-SIWE-MESSAGE"]).decode()
+    assert eth_address_from_private_key(EVM_KEY) in siwe
+
+
 # --- CLI commands (smoke) --------------------------------------------------
 
 
@@ -311,6 +344,48 @@ def test_register_subkey_command_evm_l1_key(setup_env_vars):
     # EVM path: SIWE fields present, stark signature absent.
     assert "siwe_message" in payload and "evm_signature" in payload
     assert "signature" not in payload
+
+
+def test_register_subkey_command_vault_operator(setup_env_vars):
+    pclient = _mock_authed_paradex()
+    with patch("paradex_cli.main._evm_authed_paradex", return_value=pclient) as mock_evm_auth:
+        result = runner.invoke(
+            app,
+            [
+                "register-subkey",
+                SUBKEY,
+                "--name",
+                "vault-bot",
+                "--l1-key",
+                EVM_KEY,
+                "--vault-operator-address",
+                "0xoperator",
+                "--env",
+                "testnet",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    # The operator address is threaded through to the SIWE auth as the target.
+    args, _ = mock_evm_auth.call_args
+    assert args[-1] == "0xoperator"
+
+
+def test_vault_operator_address_requires_l1_key(setup_env_vars):
+    result = runner.invoke(
+        app,
+        [
+            "register-subkey",
+            SUBKEY,
+            "--name",
+            "vault-bot",
+            "--vault-operator-address",
+            "0xoperator",
+            "--env",
+            "testnet",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "requires --l1-key" in result.output
 
 
 def test_list_subkeys_command(setup_env_vars):
