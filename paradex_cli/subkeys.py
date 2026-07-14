@@ -12,9 +12,11 @@ The Paradex backend requires this when the ``EnableSubkeyRegistrationSignature``
 feature flag is on; it is harmless (ignored) when off. See
 ``verifyRegisterSubkeySignature`` in web-api ``handlers/account_keys.go``.
 
-Only the StarkNet-key (stark-curve) authorization path is implemented here. EVM
-(EIP-191/SIWE) accounts authorize subkey registration with an L1 ``personal_sign``
-that requires the Ethereum wallet, which is outside this CLI's scope.
+EVM (EIP-191) accounts are supported end to end: SIWE onboarding/auth
+(``evm_onboard_and_auth`` — optionally targeting an EVM vault operator
+sub-account owned by the same key), and SIWE ``personal_sign`` subkey
+registration (``build_evm_register_payload``, verified by the backend's
+``verifyRegisterSubkeySignatureEvm``).
 """
 
 import time
@@ -220,6 +222,7 @@ def evm_onboard_and_auth(
     eth_private_key: str,
     siwe_domain: str,
     chain_id: int,
+    target_address: str | None = None,
 ) -> tuple[str, str]:
     """Onboard (idempotently) and authenticate an EVM (EIP-191) account.
 
@@ -228,30 +231,41 @@ def evm_onboard_and_auth(
       POST /v2/onboarding   (SIWE "Paradex Onboarding")
       POST /v2/auth         (SIWE "Paradex Auth", 30s expiry)     -> jwt
 
+    When ``target_address`` is set, authenticate *as* that account instead of
+    the key's own main account — the SIWE message is still signed by
+    ``eth_private_key``, but PARADEX-STARKNET-ACCOUNT names the target. This is
+    how an EVM vault operator sub-account is authenticated (same owner key, no
+    key of its own). Onboarding is skipped in that case: operators are created
+    by vault creation (``operator_signer_type=eip191``), never by
+    POST /v2/onboarding.
+
     ``http_get(path, params)`` and ``http_post(path, headers, json)`` are thin
     callables the caller supplies (wrapping the SDK http client / httpx) so this
     stays transport-agnostic and testable. Returns ``(paradex_address, jwt)``.
     """
     import secrets as _secrets
 
-    eth_address = eth_address_from_private_key(eth_private_key)
-    uncompressed_pub = evm_uncompressed_pubkey(eth_private_key)
+    if target_address is not None:
+        paradex_address = target_address
+    else:
+        eth_address = eth_address_from_private_key(eth_private_key)
+        uncompressed_pub = evm_uncompressed_pubkey(eth_private_key)
 
-    onb = http_get(
-        "onboarding",
-        {"eth_address": eth_address, "account_signer_type": "eip191"},
-    )
-    paradex_address = onb["address"]
-
-    if not onb.get("exists"):
-        http_post(
-            "v2/onboarding",
-            _evm_siwe_headers(
-                paradex_address, eth_private_key, siwe_domain, chain_id,
-                "Paradex Onboarding", _secrets.token_hex(16), with_expiry=False,
-            ),
-            {"public_key": uncompressed_pub},
+        onb = http_get(
+            "onboarding",
+            {"eth_address": eth_address, "account_signer_type": "eip191"},
         )
+        paradex_address = onb["address"]
+
+        if not onb.get("exists"):
+            http_post(
+                "v2/onboarding",
+                _evm_siwe_headers(
+                    paradex_address, eth_private_key, siwe_domain, chain_id,
+                    "Paradex Onboarding", _secrets.token_hex(16), with_expiry=False,
+                ),
+                {"public_key": uncompressed_pub},
+            )
 
     auth_resp = http_post(
         "v2/auth",
