@@ -39,6 +39,18 @@ def mock_asyncio_run(coro):
     return coro
 
 
+@pytest.fixture(autouse=True)
+def mock_paradex_cls():
+    """Keep this suite hermetic: every command path constructs
+    ``Paradex(env=...)``, whose constructor fetches system config from the
+    LIVE API — with testnet scaled down, the whole file fails on the ELB's
+    HTML 503. Patch the class for all tests; the few tests that assert on the
+    constructor re-patch it themselves (their inner patch wins)."""
+    with patch("paradex_cli.main.Paradex") as cls:
+        cls.return_value.config = MagicMock()
+        yield cls
+
+
 @pytest.fixture(scope="function")
 def setup_env_vars():
     os.environ["PARADEX_ACCOUNT_ADDRESS"] = "0x123"
