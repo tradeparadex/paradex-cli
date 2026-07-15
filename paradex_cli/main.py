@@ -37,6 +37,7 @@ from paradex_cli.account_ops import (
     read_signers,
 )
 from paradex_cli.subkeys import (
+    EVM_SIWE_DEFAULTS,
     SUBKEYS_PATH,
     build_evm_register_payload,
     build_register_payload,
@@ -1012,19 +1013,35 @@ def _evm_authed_paradex(
     siwe_domain: str | None,
     chain_id: int | None,
     vault_operator_address: str | None = None,
-) -> Paradex:
-    """Return a Paradex client authenticated as an EVM (EIP-191) account.
+) -> Paradex | ParadexEvm:
+    """Return a client authenticated as an EVM (EIP-191) account.
 
-    The SDK only implements the v1 stark onboarding/auth flow, so we run the
-    v2 SIWE onboarding+auth ourselves and inject the resulting JWT into the
-    api_client (set_token sets the Authorization header used by all calls).
+    Standard environments use the SDK's ``ParadexEvm`` (paradex_py >= 0.6.3),
+    which implements the whole v2 SIWE flow: onboarding-if-needed, auth,
+    vault-operator targeting, and JWT refresh on expiry.
+
+    ``--siwe-domain`` / ``--chain-id`` overrides (needed for environments the
+    SDK has no SIWE defaults for, e.g. ``local``) keep the CLI's own v2 flow,
+    since ``ParadexEvm`` hardcodes its per-env SIWE domains. The resulting JWT
+    is injected via ``set_token`` and does not auto-refresh.
 
     ``vault_operator_address`` authenticates *as* that EVM vault operator
     sub-account (owner key signs, operator is the target): the JWT's subject is
     the operator, so subkey operations in this session act on the operator's
     subkeys — the way API traders trade an EVM-owned vault.
     """
+    if siwe_domain is None and chain_id is None and env in EVM_SIWE_DEFAULTS:
+        return ParadexEvm(
+            env=env,
+            evm_address=eth_address_from_private_key(l1_key),
+            evm_private_key=l1_key,
+            ws_enabled=False,
+            server_derive_address=True,
+            vault_operator_address=vault_operator_address,
+        )
+
     if siwe_domain is None or chain_id is None:
+        # Raises a helpful "pass --siwe-domain and --chain-id" for unknown envs.
         d, c = evm_siwe_defaults(env)
         siwe_domain = siwe_domain or d
         chain_id = chain_id if chain_id is not None else c
@@ -1206,7 +1223,7 @@ def _subkey_client(
     siwe_domain: str | None,
     chain_id: int | None,
     vault_operator_address: str | None = None,
-) -> Paradex:
+) -> Paradex | ParadexEvm:
     """Authenticated client for subkey ops: EVM (v2 SIWE) when an L1 key is
     supplied, otherwise the StarkNet (v1) flow."""
     if vault_operator_address and not l1_key:

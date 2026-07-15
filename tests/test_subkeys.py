@@ -240,6 +240,62 @@ def test_evm_onboard_and_auth_targets_vault_operator():
     assert eth_address_from_private_key(EVM_KEY) in siwe
 
 
+# --- _evm_authed_paradex routing --------------------------------------------
+
+
+def test_evm_authed_paradex_uses_sdk_for_standard_envs(setup_env_vars):
+    """No SIWE overrides on a standard env -> the SDK's ParadexEvm carries the
+    whole v2 flow (onboarding-if-needed, auth, operator targeting, refresh)."""
+    from paradex_cli.main import _evm_authed_paradex
+
+    with patch("paradex_cli.main.ParadexEvm") as mock_pevm:
+        client = _evm_authed_paradex(
+            "testnet", EVM_KEY, None, None, vault_operator_address="0xoperator"
+        )
+
+    assert client is mock_pevm.return_value
+    _, kwargs = mock_pevm.call_args
+    assert kwargs["env"] == "testnet"
+    assert kwargs["evm_address"] == eth_address_from_private_key(EVM_KEY)
+    assert kwargs["evm_private_key"] == EVM_KEY
+    assert kwargs["ws_enabled"] is False
+    assert kwargs["server_derive_address"] is True
+    assert kwargs["vault_operator_address"] == "0xoperator"
+
+
+def test_evm_authed_paradex_overrides_keep_cli_flow(setup_env_vars):
+    """A custom --siwe-domain keeps the CLI's own v2 flow (ParadexEvm hardcodes
+    per-env SIWE domains) and injects the JWT via set_token."""
+    from paradex_cli.main import _evm_authed_paradex
+
+    with (
+        patch("paradex_cli.main.ParadexEvm") as mock_pevm,
+        patch("paradex_cli.main.Paradex") as mock_paradex,
+        patch("paradex_cli.main.evm_onboard_and_auth", return_value=("0xacct", "jwt-1")) as mock_flow,
+    ):
+        mock_paradex.return_value.api_client.api_url = "https://api.example.dev/v1"
+        client = _evm_authed_paradex(
+            "testnet", EVM_KEY, "custom.example.dev", None, vault_operator_address="0xoperator"
+        )
+
+    mock_pevm.assert_not_called()
+    assert client is mock_paradex.return_value
+    args, kwargs = mock_flow.call_args
+    assert args[3] == "custom.example.dev"  # siwe_domain
+    assert args[4] == 11155111  # chain id defaulted per-env
+    assert kwargs["target_address"] == "0xoperator"
+    client.api_client.set_token.assert_called_once_with("jwt-1")
+
+
+def test_evm_authed_paradex_unknown_env_requires_overrides(setup_env_vars):
+    """An env without SIWE defaults must ask for --siwe-domain/--chain-id, not
+    fall into the SDK (whose env validation would give a confusing error)."""
+    from paradex_cli.main import _evm_authed_paradex
+
+    with pytest.raises(ValueError, match="siwe-domain"):
+        _evm_authed_paradex("local", EVM_KEY, None, None)
+
+
 # --- CLI commands (smoke) --------------------------------------------------
 
 
