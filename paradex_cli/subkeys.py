@@ -226,7 +226,10 @@ def evm_onboard_and_auth(
 ) -> tuple[str, str]:
     """Onboard (idempotently) and authenticate an EVM (EIP-191) account.
 
-    Uses the v2 SIWE endpoints (the SDK only speaks the v1 stark flow):
+    Fallback for custom ``--siwe-domain`` / ``--chain-id`` overrides only —
+    standard environments use the SDK's ``ParadexEvm`` (paradex_py >= 0.6.3),
+    which hardcodes per-env SIWE domains and so cannot serve custom ones.
+    Uses the v2 SIWE endpoints:
       GET  /onboarding?eth_address=..&account_signer_type=eip191  -> address
       POST /v2/onboarding   (SIWE "Paradex Onboarding")
       POST /v2/auth         (SIWE "Paradex Auth", 30s expiry)     -> jwt
