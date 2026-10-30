@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10, <3.13"
 
 [[package]]
@@ -248,11 +248,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.2.25"
+version = "2026.10.18"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/af/2d/7bf41579a8986e348fa033a31cdd0e4121114f6bce2457e8876010b092dd/certifi-2026.2.25.tar.gz", hash = "sha256:e887ab5cee78ea814d3472169153c2d12cd43b14bd03329a39a9c6e2e80bfba7", size = 155029, upload-time = "2026-02-25T02:54:17.342Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/eb/a2aa1ac3ea30dd3f30ca57f40232138b6b0040719316ecb85daf61167771/certifi-2026.10.18.tar.gz", hash = "sha256:b9995d97b64d0431a5af837d8ca8cd6238104d1f319f04bd93ea43124d6c861e", size = 135227, upload-time = "2026-10-18T16:21:07.655Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/3c/c17fb3ca2d9c3acff52e30b309f538586f9f5b9c9cf454f3845fc9af4881/certifi-2026.2.25-py3-none-any.whl", hash = "sha256:027692e4402ad994f1c42e52a4997a9763c646b73e4096e4d5d6db8af1d6f0fa", size = 153684, upload-time = "2026-02-25T02:54:15.766Z" },
+    { url = "https://files.pythonhosted.org/packages/08/ba/95dd616042484f7c83a06974388b37b837732740ee70bc5dc715b5fcd55a/certifi-2026.10.18-py3-none-any.whl", hash = "sha256:73191c47aaa79da394e8fee2dbc2ec827432cab56311122c9e47abf79e390f62", size = 134093, upload-time = "2026-10-18T16:21:06.276Z" },
 ]
 
 [[package]]
@@ -1117,9 +1117,9 @@ dependencies = [
     { name = "starknet-py" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/0a/f1b1fa2d95fab2a6747a844d49998af77dd799cabf03b65b0119b7292be1/paradex_py-0.6.3.tar.gz", hash = "sha256:2524715b991df6500dcdb878f221cc54e6fb31465bdbca3a30c77a343284283e", size = 423665, upload-time = "2026-07-14T14:06:11.326378Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/0a/f1b1fa2d95fab2a6747a844d49998af77dd799cabf03b65b0119b7292be1/paradex_py-0.6.3.tar.gz", hash = "sha256:2524715b991df6500dcdb878f221cc54e6fb31465bdbca3a30c77a343284283e", size = 423665, upload-time = "2026-07-14T14:06:11.326Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/f3/46fa24c3800d457e848032cdf6a279b45a8c4fb059b94d26280b84fc9b48/paradex_py-0.6.3-py3-none-any.whl", hash = "sha256:436ea118392b149b8831f80ba39cbdd0564193ba51d6308933920fc0872bbf98", size = 143980, upload-time = "2026-07-14T14:06:09.911863Z" },
+    { url = "https://files.pythonhosted.org/packages/55/f3/46fa24c3800d457e848032cdf6a279b45a8c4fb059b94d26280b84fc9b48/paradex_py-0.6.3-py3-none-any.whl", hash = "sha256:436ea118392b149b8831f80ba39cbdd0564193ba51d6308933920fc0872bbf98", size = 143980, upload-time = "2026-07-14T14:06:09.911Z" },
 ]
 
 [[package]]
